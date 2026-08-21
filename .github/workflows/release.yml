@@ -42,7 +42,16 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: fast-scribe-${{ matrix.platform }}
-          path: fast-scribe-app/dist-electron/*
+          # Files only. dist-electron also holds unpacked app trees
+          # (win-unpacked/, mac-arm64/, linux-unpacked/) which gh cannot upload as
+          # release assets. latest*.yml rather than *.yml skips builder-*.yml noise.
+          path: |
+            fast-scribe-app/dist-electron/*.exe
+            fast-scribe-app/dist-electron/*.dmg
+            fast-scribe-app/dist-electron/*.zip
+            fast-scribe-app/dist-electron/*.AppImage
+            fast-scribe-app/dist-electron/*.blockmap
+            fast-scribe-app/dist-electron/latest*.yml
           if-no-files-found: error
 
   release:
