@@ -40,7 +40,10 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: fast-scribe-${{ matrix.platform }}
-          path: fast-scribe-app/dist-electron/*
+          path: |
+            fast-scribe-app/dist-electron/*.exe
+            fast-scribe-app/dist-electron/*.dmg
+            fast-scribe-app/dist-electron/*.AppImage
           if-no-files-found: error
 
   release:
@@ -52,6 +55,13 @@ jobs:
         with:
           path: release-assets
           merge-multiple: true
-      - env:
+      - name: Create release and upload installers
+        env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${{ github.ref_name }}" release-assets/* --repo "${{ github.repository }}" --generate-notes --title "Fast Scribe ${{ github.ref_name }}"
+          RELEASE_TAG: ${{ github.ref_name }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          if ! gh release view "$RELEASE_TAG" --repo "$REPOSITORY" > /dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" --repo "$REPOSITORY" --generate-notes --title "Fast Scribe $RELEASE_TAG"
+          fi
+          gh release upload "$RELEASE_TAG" release-assets/* --repo "$REPOSITORY" --clobber
