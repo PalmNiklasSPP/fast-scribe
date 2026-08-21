@@ -13,6 +13,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openFolder: () => ipcRenderer.invoke('dialog:openFolder'),
   openInExplorer: (filePath) => ipcRenderer.invoke('shell:openPath', filePath),
 
+  // Transcript files
+  readTranscript: (filePath) => ipcRenderer.invoke('transcript:read', filePath),
+  saveTranscript: (filePath, content) => ipcRenderer.invoke('transcript:write', { filePath, content }),
+  setTranscriptDirty: (dirty) => ipcRenderer.invoke('transcript:setDirty', dirty),
+  copyText: (text) => ipcRenderer.invoke('clipboard:writeText', text),
+
   // Updates
   getUpdateState: () => ipcRenderer.invoke('update:getState'),
   checkForUpdates: () => ipcRenderer.invoke('update:check'),

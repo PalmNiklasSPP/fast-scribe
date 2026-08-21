@@ -68,6 +68,10 @@ declare global {
       openFiles: () => Promise<string[]>;
       openFolder: () => Promise<string | null>;
       openInExplorer: (filePath: string) => Promise<void>;
+      readTranscript: (filePath: string) => Promise<string>;
+      saveTranscript: (filePath: string, content: string) => Promise<void>;
+      setTranscriptDirty: (dirty: boolean) => Promise<void>;
+      copyText: (text: string) => Promise<void>;
       getUpdateState: () => Promise<UpdateState>;
       checkForUpdates: () => Promise<UpdateState>;
       downloadUpdate: () => Promise<UpdateState>;
