@@ -1,8 +1,10 @@
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
-const { spawn } = require('child_process');
-const fs = require('fs');
 const Store = require('electron-store').default;
+const {
+  createTranscriptionJob,
+  TranscriptionCancelledError,
+} = require('./transcription.cjs');
 
 const store = new Store({
   defaults: {
@@ -19,6 +21,9 @@ const store = new Store({
 const isDev = process.env.NODE_ENV === 'development';
 
 let mainWindow;
+const activeJobs = new Map();
+let allowQuit = false;
+let shutdownPromise = null;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -59,6 +64,23 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 
+app.on('before-quit', (event) => {
+  if (allowQuit || activeJobs.size === 0) return;
+
+  event.preventDefault();
+  if (shutdownPromise) return;
+
+  const jobs = [...activeJobs.values()];
+  for (const job of jobs) job.cancel();
+
+  shutdownPromise = Promise.allSettled(
+    jobs.map((job) => job.completion),
+  ).finally(() => {
+    allowQuit = true;
+    app.quit();
+  });
+});
+
 // --- IPC: Config ---
 
 ipcMain.handle('config:get', () => store.store);
@@ -93,87 +115,54 @@ ipcMain.handle('shell:openPath', (_event, filePath) => {
 
 // --- IPC: Transcription ---
 
-const activeJobs = new Map(); // jobId -> childProcess
-
-function getPythonPath() {
-  // Try common Python executables
-  return process.platform === 'win32' ? 'python' : 'python3';
-}
-
-function getScriptPath() {
-  if (isDev) {
-    return path.join(__dirname, '../../transcribe_cli.py');
-  }
-  return path.join(process.resourcesPath, 'transcribe_cli.py');
-}
-
 ipcMain.handle('transcription:start', (_event, { jobId, filePath, config }) => {
-  const python = getPythonPath();
-  const script = getScriptPath();
+  if (activeJobs.has(jobId)) {
+    throw new Error(`Transcription job ${jobId} is already active.`);
+  }
 
   const outputDir = config.outputDir || path.dirname(filePath);
-
-  const args = [
-    script,
-    filePath,
-    '--endpoint', config.endpoint,
-    '--api-key', config.apiKey,
-    '--model', config.model || 'gpt-4o-transcribe',
-    '--output-dir', outputDir,
-    '--chunk-duration-ms', String(config.chunkDurationMs ?? 600000),
-  ];
-
-  if (config.language && config.language !== 'auto') {
-    args.push('--language', config.language);
-  }
-
-  const proc = spawn(python, args, { stdio: ['ignore', 'pipe', 'pipe'] });
-  activeJobs.set(jobId, proc);
-
-  proc.stdout.on('data', (data) => {
-    const lines = data.toString().split('\n').filter(Boolean);
-    for (const line of lines) {
-      try {
-        const event = JSON.parse(line);
-        mainWindow.webContents.send(`transcription:event:${jobId}`, event);
-      } catch {
-        // ignore non-JSON stdout
-      }
+  const sendEvent = (event) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send(`transcription:event:${jobId}`, event);
     }
+  };
+  const job = createTranscriptionJob({
+    inputPath: filePath,
+    outputDir,
+    config,
+    onEvent: sendEvent,
   });
 
-  proc.stderr.on('data', (data) => {
-    mainWindow.webContents.send(`transcription:event:${jobId}`, {
-      type: 'log',
-      message: data.toString(),
+  activeJobs.set(jobId, job);
+  job.start()
+    .then(() => {
+      sendEvent({ type: 'done', message: 'Transcription complete.' });
+    })
+    .catch((error) => {
+      if (error instanceof TranscriptionCancelledError) {
+        sendEvent({ type: 'cancelled', message: error.message });
+      } else {
+        sendEvent({ type: 'error', message: error.message });
+      }
+    })
+    .finally(() => {
+      activeJobs.delete(jobId);
     });
-  });
-
-  proc.on('close', (code) => {
-    activeJobs.delete(jobId);
-    mainWindow.webContents.send(`transcription:event:${jobId}`, {
-      type: code === 0 ? 'done' : 'error',
-      message: code === 0 ? 'Transcription complete.' : `Process exited with code ${code}`,
-    });
-  });
-
-  proc.on('error', (err) => {
-    activeJobs.delete(jobId);
-    mainWindow.webContents.send(`transcription:event:${jobId}`, {
-      type: 'error',
-      message: err.message,
-    });
-  });
 
   return { started: true };
 });
 
-ipcMain.handle('transcription:cancel', (_event, { jobId }) => {
-  const proc = activeJobs.get(jobId);
-  if (proc) {
-    proc.kill();
-    activeJobs.delete(jobId);
-    return { cancelled: true };
+ipcMain.handle('transcription:cancel', async (_event, { jobId }) => {
+  const job = activeJobs.get(jobId);
+  if (!job) return { cancelled: false };
+
+  job.cancel();
+  try {
+    await job.completion;
+  } catch (error) {
+    if (!(error instanceof TranscriptionCancelledError)) {
+      return { cancelled: false };
+    }
   }
-  return { cancelled: false };
+  return { cancelled: true };
 });

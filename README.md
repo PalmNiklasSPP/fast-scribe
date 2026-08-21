@@ -9,25 +9,15 @@ A sleek desktop app for transcribing audio files using Azure OpenAI (gpt-4o-tran
 | Desktop shell | Electron |
 | UI | React + TypeScript + Vite |
 | Styling | Tailwind CSS v4 + shadcn/ui |
-| Transcription | Python (pydub + requests) |
+| Transcription | Node.js + bundled FFmpeg |
 | Config persistence | electron-store |
 
 ## Prerequisites
 
 - **Node.js** 18+
-- **Python** 3.11+ with `pip`
-- **ffmpeg** — required by pydub for audio conversion
 
-### Install ffmpeg (Windows)
-```powershell
-winget install ffmpeg
-```
-Or download from https://ffmpeg.org/download.html and add to PATH.
-
-### Install Python dependencies
-```bash
-pip install pydub requests
-```
+FFmpeg is installed as an npm dependency and bundled into desktop installers.
+No system FFmpeg or Python installation is required.
 
 ## Development
 
@@ -76,13 +66,13 @@ npm run build:win    # Windows installer (.exe)
 
 Output appears in `fast-scribe-app/dist-electron/`. On Windows, distribute the
 generated `Fast Scribe Setup *.exe`; recipients install it once and then launch
-Fast Scribe like any other desktop application. The Python script
-(`transcribe_cli.py`) is bundled as an extra resource.
+Fast Scribe like any other desktop application. The installer includes the
+native FFmpeg binary used for audio conversion and chunking, so no additional
+runtime or audio tools are required.
 
-> **Note:** The installer removes the Node.js/npm requirement, but transcription
-> still requires Python, `pydub`, `requests`, and ffmpeg on the recipient's
-> machine. A fully self-contained installer will additionally need a bundled
-> Python runtime and ffmpeg.
+Temporary converted audio and chunks are stored in a per-job OS temporary
+directory. They are removed after success, failure, or normal cancellation.
+The final `.txt` file is published only after every chunk succeeds.
 
 ## Publishing downloadable installers
 
@@ -101,11 +91,13 @@ Users can then download the appropriate file from the repository's
 
 ```
 fast-scribe/
-├── transcribe_cli.py          # Python transcription CLI (used by Electron)
+├── legacy/
+│   └── transcribe_cli.py      # Unpackaged Python reference implementation
 └── fast-scribe-app/
     ├── electron/
-    │   ├── main.cjs           # Electron main process, IPC handlers, spawns Python
-    │   └── preload.cjs        # Context bridge — exposes safe API to renderer
+    │   ├── main.cjs           # Electron main process and job IPC handlers
+    │   ├── preload.cjs        # Context bridge — exposes safe API to renderer
+    │   └── transcription.cjs  # FFmpeg conversion, Azure upload, and cleanup
     └── src/
         ├── components/
         │   ├── ui/            # shadcn/ui primitives (button, input, progress, …)
@@ -120,6 +112,9 @@ fast-scribe/
         │   └── utils.ts       # cn() helper
         └── App.tsx            # Root — layout, config loading, action bar
 ```
+
+The bundled FFmpeg distribution and license details are recorded in
+`fast-scribe-app/THIRD_PARTY_NOTICES.md`.
 
 ## Future: Pipeline Steps
 

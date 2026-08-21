@@ -1,7 +1,7 @@
 {
   "name": "fast-scribe-app",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "description": "Desktop app for bulk audio transcription with Azure OpenAI.",
   "author": "PalmNiklasSPP",
   "repository": {
@@ -18,6 +18,7 @@
     "build:mac": "npm run build && electron-builder --mac dmg --publish never",
     "build:linux": "npm run build && electron-builder --linux AppImage --publish never",
     "lint": "oxlint",
+    "test": "node --test electron/*.test.cjs",
     "preview": "vite preview"
   },
   "build": {
@@ -31,14 +32,12 @@
     "files": [
       "dist/**/*",
       "electron/**/*",
+      "!electron/*.test.cjs",
       "public/**/*",
-      "transcribe_cli.py"
+      "THIRD_PARTY_NOTICES.md"
     ],
-    "extraResources": [
-      {
-        "from": "../transcribe_cli.py",
-        "to": "transcribe_cli.py"
-      }
+    "asarUnpack": [
+      "node_modules/ffmpeg-static/**"
     ],
     "win": {
       "target": "nsis"
@@ -69,6 +68,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "electron-store": "^11.0.2",
+    "ffmpeg-static": "^5.3.0",
     "lucide-react": "^1.33.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
