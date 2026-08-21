@@ -42,12 +42,12 @@ def split_audio(wav_path: str, chunk_length_ms: int) -> list[str]:
     return chunks
 
 
-def transcribe_chunk(file_path: str, endpoint: str, api_key: str, language: str | None) -> str:
+def transcribe_chunk(file_path: str, endpoint: str, api_key: str, model: str, language: str | None) -> str:
     headers = {"api-key": api_key}
     with open(file_path, "rb") as f:
         files_payload = {
             "file": (os.path.basename(file_path), f, "audio/wav"),
-            "model": (None, "gpt-4o-transcribe"),
+            "model": (None, model),
         }
         if language and language != "auto":
             files_payload["language"] = (None, language)
@@ -65,6 +65,7 @@ def main():
     parser.add_argument("file", help="Path to the audio file to transcribe")
     parser.add_argument("--endpoint", required=True, help="Azure OpenAI transcription endpoint URL")
     parser.add_argument("--api-key", required=True, help="Azure OpenAI API key")
+    parser.add_argument("--model", default="gpt-4o-transcribe", help="Azure OpenAI transcription model")
     parser.add_argument("--output-dir", default=None, help="Directory for output .txt file (default: same as input)")
     parser.add_argument("--chunk-duration-ms", type=int, default=600_000, help="Audio chunk duration in ms (default: 600000 = 10min)")
     parser.add_argument("--language", default=None, help="Language ISO code, or omit for auto-detect")
@@ -104,7 +105,7 @@ def main():
                 progress = 15 + int((i / total) * 80)
                 emit({"type": "progress", "progress": progress})
 
-                text = transcribe_chunk(chunk, args.endpoint, args.api_key, args.language)
+                text = transcribe_chunk(chunk, args.endpoint, args.api_key, args.model, args.language)
                 out.write(text + "\n\n")
 
                 # Clean up chunk immediately
