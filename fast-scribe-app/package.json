@@ -19,6 +19,7 @@
     "build:linux": "npm run build && electron-builder --linux AppImage --publish never",
     "lint": "oxlint",
     "test": "node --test electron/*.test.cjs",
+    "release:prepare": "npm version --no-git-tag-version",
     "preview": "vite preview"
   },
   "build": {

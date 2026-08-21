@@ -18,9 +18,8 @@ it and restart into the update. Development builds never contact the update serv
 
 To publish an update:
 
-1. Set `version` in `package.json` to the new semantic version.
-2. Commit and push the change.
-3. Tag that commit with the matching version, for example `v1.1.0`, and push the tag.
+1. Follow the repository [release process](../RELEASING.md) to prepare, validate,
+   merge, and tag the new version.
 
 The `Build desktop installers` workflow creates the GitHub Release and uploads the installers,
 blockmaps, and update metadata consumed by `electron-updater`. Each release must remain
