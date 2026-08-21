@@ -1,0 +1,169 @@
+import { useEffect, useState, useMemo } from "react"
+import { Mic2, Play, X, Trash2, AlertCircle } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Separator } from "@/components/ui/separator"
+import { DropZone } from "@/components/DropZone"
+import { FileList } from "@/components/FileList"
+import { SettingsPanel } from "@/components/SettingsPanel"
+import { ToastProvider, ToastViewport, Toast, ToastTitle, ToastDescription, ToastClose } from "@/components/ui/toast"
+import { useTranscription } from "@/hooks/useTranscription"
+import { useToast } from "@/hooks/useToast"
+import type { AppConfig } from "@/lib/types"
+
+const DEFAULT_CONFIG: AppConfig = {
+  endpoint: "",
+  apiKey: "",
+  outputDir: "",
+  chunkDurationMs: 600000,
+  language: "auto",
+  theme: "system",
+}
+
+export default function App() {
+  const [config, setConfig] = useState<AppConfig>(DEFAULT_CONFIG)
+  const [configLoaded, setConfigLoaded] = useState(false)
+  const { toasts, toast, dismiss } = useToast()
+
+  useEffect(() => {
+    window.electronAPI.getConfig().then((cfg) => {
+      setConfig(cfg)
+      setConfigLoaded(true)
+    })
+  }, [])
+
+  const { files, addFiles, removeFile, clearCompleted, startTranscription, cancelAll } =
+    useTranscription(config)
+
+  const handleSaveConfig = async (updates: Partial<AppConfig>) => {
+    const updated = await window.electronAPI.setConfig(updates)
+    setConfig(updated)
+    toast({ title: "Settings saved" })
+  }
+
+  const isRunning = files.some(
+    (f) => f.status === "transcribing" || f.status === "converting" || f.status === "queued"
+  )
+  const idleCount = files.filter((f) => f.status === "idle").length
+  const doneCount = files.filter((f) => f.status === "done").length
+  const errorCount = files.filter((f) => f.status === "error").length
+  const configMissing = !config.endpoint || !config.apiKey
+  const pipelineSteps = useMemo(() => [] as string[], [])
+
+  const handleStart = async () => {
+    if (configMissing) {
+      toast({ title: "Configuration required", description: "Set your Azure endpoint and API key in Settings.", variant: "error" })
+      return
+    }
+    try {
+      await startTranscription()
+    } catch (e) {
+      toast({ title: "Error", description: String(e), variant: "error" })
+    }
+  }
+
+  if (!configLoaded) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-zinc-950">
+        <Mic2 size={28} className="animate-pulse text-violet-500" />
+      </div>
+    )
+  }
+
+  return (
+    <ToastProvider>
+      <div className="flex h-screen flex-col bg-zinc-950 text-zinc-100 select-none">
+        <div
+          className="flex h-10 items-center justify-between px-4"
+          style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
+        >
+          <div className="flex items-center gap-2" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
+            <Mic2 size={16} className="text-violet-500" />
+            <span className="text-sm font-semibold tracking-tight">Fast Scribe</span>
+          </div>
+          <div style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
+            <SettingsPanel config={config} onSave={handleSaveConfig} />
+          </div>
+        </div>
+
+        <Separator />
+
+        <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-5">
+          {configMissing && (
+            <div className="flex items-center gap-2 rounded-lg border border-amber-900/60 bg-amber-950/30 px-4 py-2.5 text-xs text-amber-400">
+              <AlertCircle size={13} className="shrink-0" />
+              Azure endpoint and API key not configured. Open Settings to get started.
+            </div>
+          )}
+
+          <DropZone onFilesAdded={addFiles} />
+
+          {files.length > 0 && (
+            <>
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-zinc-500">
+                  {files.length} file{files.length !== 1 ? "s" : ""}
+                  {doneCount > 0 && ` · ${doneCount} done`}
+                  {errorCount > 0 && ` · ${errorCount} error${errorCount !== 1 ? "s" : ""}`}
+                </span>
+                {(doneCount > 0 || errorCount > 0) && (
+                  <Button variant="ghost" size="sm" onClick={clearCompleted} className="h-6 gap-1 text-xs text-zinc-500">
+                    <Trash2 size={11} /> Clear completed
+                  </Button>
+                )}
+              </div>
+              <FileList
+                files={files}
+                onRemove={removeFile}
+                onOpenOutput={(p) => window.electronAPI.openInExplorer(p)}
+              />
+            </>
+          )}
+
+          {pipelineSteps.length > 0 && (
+            <div className="rounded-lg border border-zinc-800 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wider text-zinc-600">Pipeline</p>
+            </div>
+          )}
+        </div>
+
+        {files.length > 0 && (
+          <>
+            <Separator />
+            <div className="flex items-center justify-between px-5 py-3">
+              <span className="text-xs text-zinc-600">
+                {isRunning
+                  ? `Transcribing ${files.filter((f) => f.status === "transcribing" || f.status === "converting").length} file(s)...`
+                  : idleCount > 0
+                  ? `${idleCount} file${idleCount !== 1 ? "s" : ""} ready`
+                  : "All complete"}
+              </span>
+              <div className="flex gap-2">
+                {isRunning && (
+                  <Button variant="outline" size="sm" onClick={cancelAll}>
+                    <X size={14} /> Cancel
+                  </Button>
+                )}
+                {!isRunning && idleCount > 0 && (
+                  <Button size="sm" onClick={handleStart}>
+                    <Play size={14} /> Transcribe
+                  </Button>
+                )}
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+
+      <ToastViewport />
+      {toasts.map((t) => (
+        <Toast key={t.id}>
+          <div className="flex-1">
+            <ToastTitle>{t.title}</ToastTitle>
+            {t.description && <ToastDescription>{t.description}</ToastDescription>}
+          </div>
+          <ToastClose onClick={() => dismiss(t.id)} />
+        </Toast>
+      ))}
+    </ToastProvider>
+  )
+}
