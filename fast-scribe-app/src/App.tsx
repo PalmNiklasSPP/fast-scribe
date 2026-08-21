@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo } from "react"
-import { Mic2, Play, X, Trash2, AlertCircle, Settings, Download, RefreshCw } from "lucide-react"
+import { Play, X, Trash2, AlertCircle, Settings, Download, RefreshCw } from "lucide-react"
+import appIcon from "@/assets/app-icon.svg"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { DropZone } from "@/components/DropZone"
@@ -92,7 +93,7 @@ export default function App() {
   if (!configLoaded) {
     return (
       <div className="flex h-screen items-center justify-center bg-zinc-950">
-        <Mic2 size={28} className="animate-pulse text-violet-500" />
+        <img src={appIcon} alt="Fast Scribe" className="h-8 w-8 animate-pulse" />
       </div>
     )
   }
@@ -106,7 +107,7 @@ export default function App() {
             style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
           >
             <div className="flex items-center gap-2" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
-              <Mic2 size={16} className="text-violet-500" />
+              <img src={appIcon} alt="" aria-hidden="true" className="h-4 w-4" />
               <span className="text-sm font-semibold tracking-tight">Fast Scribe</span>
               <Button
                 variant={settingsOpen ? "outline" : "ghost"}
