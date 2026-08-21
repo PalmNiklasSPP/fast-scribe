@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from "react"
-import { Mic2, Play, X, Trash2, AlertCircle } from "lucide-react"
+import { Mic2, Play, X, Trash2, AlertCircle, Settings } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { DropZone } from "@/components/DropZone"
@@ -13,6 +13,7 @@ import type { AppConfig } from "@/lib/types"
 const DEFAULT_CONFIG: AppConfig = {
   endpoint: "",
   apiKey: "",
+  model: "gpt-4o-transcribe",
   outputDir: "",
   chunkDurationMs: 600000,
   language: "auto",
@@ -22,6 +23,7 @@ const DEFAULT_CONFIG: AppConfig = {
 export default function App() {
   const [config, setConfig] = useState<AppConfig>(DEFAULT_CONFIG)
   const [configLoaded, setConfigLoaded] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const { toasts, toast, dismiss } = useToast()
 
   useEffect(() => {
@@ -71,28 +73,45 @@ export default function App() {
 
   return (
     <ToastProvider>
-      <div className="flex h-screen flex-col bg-zinc-950 text-zinc-100 select-none">
-        <div
-          className="flex h-10 items-center justify-between px-4"
-          style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
-        >
-          <div className="flex items-center gap-2" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
-            <Mic2 size={16} className="text-violet-500" />
-            <span className="text-sm font-semibold tracking-tight">Fast Scribe</span>
+      <div className="flex h-screen bg-zinc-950 text-zinc-100 select-none">
+        <div className="flex min-w-0 flex-1 flex-col">
+          <div
+            className="flex h-10 items-center justify-between px-4"
+            style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
+          >
+            <div className="flex items-center gap-2" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
+              <Mic2 size={16} className="text-violet-500" />
+              <span className="text-sm font-semibold tracking-tight">Fast Scribe</span>
+              <Button
+                variant={settingsOpen ? "outline" : "ghost"}
+                size="sm"
+                title="Settings"
+                onClick={() => setSettingsOpen((open) => !open)}
+              >
+                <Settings size={14} />
+                Settings
+              </Button>
+            </div>
           </div>
-          <div style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
-            <SettingsPanel config={config} onSave={handleSaveConfig} />
-          </div>
-        </div>
 
-        <Separator />
+          <Separator />
 
         <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-5">
           {configMissing && (
-            <div className="flex items-center gap-2 rounded-lg border border-amber-900/60 bg-amber-950/30 px-4 py-2.5 text-xs text-amber-400">
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-amber-900/60 bg-amber-950/30 px-4 py-2.5 text-xs text-amber-400">
+              <div className="flex items-center gap-2">
               <AlertCircle size={13} className="shrink-0" />
-              Azure endpoint and API key not configured. Open Settings to get started.
-            </div>
+                Azure endpoint and API key not configured.
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-amber-800 text-amber-300 hover:bg-amber-900/40 hover:text-amber-200"
+                onClick={() => setSettingsOpen(true)}
+              >
+                Open Settings
+              </Button>
+        </div>
           )}
 
           <DropZone onFilesAdded={addFiles} />
@@ -152,8 +171,16 @@ export default function App() {
             </div>
           </>
         )}
-      </div>
+          </div>
 
+          {settingsOpen && (
+            <SettingsPanel
+              config={config}
+              onSave={handleSaveConfig}
+              onClose={() => setSettingsOpen(false)}
+            />
+          )}
+        </div>
       <ToastViewport />
       {toasts.map((t) => (
         <Toast key={t.id}>

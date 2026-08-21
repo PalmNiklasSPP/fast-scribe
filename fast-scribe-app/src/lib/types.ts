@@ -1,6 +1,7 @@
 export interface AppConfig {
   endpoint: string;
   apiKey: string;
+  model: string;
   outputDir: string;
   chunkDurationMs: number;
   language: string;

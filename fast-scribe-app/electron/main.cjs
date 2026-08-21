@@ -8,6 +8,7 @@ const store = new Store({
   defaults: {
     endpoint: '',
     apiKey: '',
+    model: 'gpt-4o-transcribe',
     outputDir: '',
     chunkDurationMs: 600000,
     language: 'auto',
@@ -117,6 +118,7 @@ ipcMain.handle('transcription:start', (_event, { jobId, filePath, config }) => {
     filePath,
     '--endpoint', config.endpoint,
     '--api-key', config.apiKey,
+    '--model', config.model || 'gpt-4o-transcribe',
     '--output-dir', outputDir,
     '--chunk-duration-ms', String(config.chunkDurationMs ?? 600000),
   ];

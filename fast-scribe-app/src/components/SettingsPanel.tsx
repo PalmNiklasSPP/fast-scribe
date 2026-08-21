@@ -1,6 +1,5 @@
-import { useState, useEffect } from 'react'
-import { Settings, FolderOpen } from 'lucide-react'
-import * as Dialog from '@radix-ui/react-dialog'
+import { useState } from 'react'
+import { FolderOpen, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -10,13 +9,11 @@ import type { AppConfig } from '@/lib/types'
 interface SettingsPanelProps {
   config: AppConfig
   onSave: (updates: Partial<AppConfig>) => Promise<void>
+  onClose: () => void
 }
 
-export function SettingsPanel({ config, onSave }: SettingsPanelProps) {
-  const [open, setOpen] = useState(false)
+export function SettingsPanel({ config, onSave, onClose }: SettingsPanelProps) {
   const [form, setForm] = useState<AppConfig>(config)
-
-  useEffect(() => setForm(config), [config])
 
   const set = (key: keyof AppConfig, value: string | number) =>
     setForm((prev) => ({ ...prev, [key]: value }))
@@ -28,32 +25,39 @@ export function SettingsPanel({ config, onSave }: SettingsPanelProps) {
 
   const handleSave = async () => {
     await onSave(form)
-    setOpen(false)
+    onClose()
   }
 
   return (
-    <Dialog.Root open={open} onOpenChange={setOpen}>
-      <Dialog.Trigger asChild>
-        <Button variant="ghost" size="icon" title="Settings">
-          <Settings size={18} />
+    <aside className="flex w-[380px] shrink-0 flex-col border-l border-zinc-800 bg-zinc-950">
+      <div className="flex h-10 items-center justify-between border-b border-zinc-800 px-4">
+        <div>
+          <h2 className="text-sm font-semibold text-zinc-100">Settings</h2>
+        </div>
+        <Button variant="ghost" size="icon" title="Close settings" onClick={onClose}>
+          <X size={16} />
         </Button>
-      </Dialog.Trigger>
+      </div>
 
-      <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
-        <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[520px] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-zinc-800 bg-zinc-950 p-6 shadow-2xl data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95">
-          <Dialog.Title className="text-base font-semibold text-zinc-100">Settings</Dialog.Title>
-          <Dialog.Description className="mt-1 text-xs text-zinc-500">
-            Configure your Azure OpenAI connection and transcription defaults.
-          </Dialog.Description>
-
-          <div className="mt-6 flex flex-col gap-4">
-            {/* Azure Config */}
+      <div className="flex-1 overflow-y-auto p-5">
+        <p className="text-xs text-zinc-500">
+          Configure where transcripts are saved and which Azure OpenAI model to use.
+        </p>
+        <div className="mt-6 flex flex-col gap-4">
             <div>
-              <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-zinc-600">Azure OpenAI</p>
+              <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-zinc-600">Model configuration</p>
               <div className="flex flex-col gap-3">
                 <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="endpoint">Endpoint URL</Label>
+                  <Label htmlFor="model">Model</Label>
+                  <Input
+                    id="model"
+                    placeholder="gpt-4o-transcribe"
+                    value={form.model}
+                    onChange={(e) => set('model', e.target.value)}
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="endpoint">Deployment endpoint</Label>
                   <Input
                     id="endpoint"
                     placeholder="https://your-resource.openai.azure.com/openai/deployments/..."
@@ -76,7 +80,6 @@ export function SettingsPanel({ config, onSave }: SettingsPanelProps) {
 
             <Separator />
 
-            {/* Output */}
             <div>
               <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-zinc-600">Output</p>
               <div className="flex flex-col gap-3">
@@ -100,7 +103,6 @@ export function SettingsPanel({ config, onSave }: SettingsPanelProps) {
 
             <Separator />
 
-            {/* Transcription */}
             <div>
               <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-zinc-600">Transcription</p>
               <div className="flex flex-col gap-3">
@@ -128,16 +130,13 @@ export function SettingsPanel({ config, onSave }: SettingsPanelProps) {
                 </div>
               </div>
             </div>
-          </div>
+        </div>
+      </div>
 
-          <div className="mt-6 flex justify-end gap-2">
-            <Dialog.Close asChild>
-              <Button variant="outline">Cancel</Button>
-            </Dialog.Close>
-            <Button onClick={handleSave}>Save</Button>
-          </div>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+      <div className="flex justify-end gap-2 border-t border-zinc-800 p-4">
+        <Button variant="outline" onClick={onClose}>Cancel</Button>
+        <Button onClick={handleSave}>Save changes</Button>
+      </div>
+    </aside>
   )
 }
