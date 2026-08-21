@@ -2,24 +2,36 @@
   "name": "fast-scribe-app",
   "private": true,
   "version": "0.0.0",
+  "description": "Desktop app for bulk audio transcription with Azure OpenAI.",
+  "author": "PalmNiklasSPP",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/PalmNiklasSPP/fast-scribe.git"
+  },
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
     "dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && cross-env NODE_ENV=development electron .\"",
     "build": "tsc -b && vite build",
-    "build:electron": "tsc -b && vite build && electron-builder",
+    "build:electron": "tsc -b && vite build && electron-builder --publish never",
+    "build:win": "npm run build && electron-builder --win nsis --publish never",
+    "build:mac": "npm run build && electron-builder --mac dmg --publish never",
+    "build:linux": "npm run build && electron-builder --linux AppImage --publish never",
     "lint": "oxlint",
     "preview": "vite preview"
   },
   "build": {
     "appId": "com.fastscribe.app",
     "productName": "Fast Scribe",
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+    "icon": "public/icon.png",
     "directories": {
       "output": "dist-electron"
     },
     "files": [
       "dist/**/*",
       "electron/**/*",
+      "public/**/*",
       "transcribe_cli.py"
     ],
     "extraResources": [
@@ -33,7 +45,17 @@
     },
     "mac": {
       "target": "dmg"
-    }
+    },
+    "linux": {
+      "target": "AppImage"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "PalmNiklasSPP",
+        "repo": "fast-scribe"
+      }
+    ]
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.23",

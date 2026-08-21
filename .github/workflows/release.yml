@@ -1,0 +1,57 @@
+name: Build desktop installers
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.platform }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: Windows
+            os: windows-latest
+            command: npm run build:win
+          - platform: macOS
+            os: macos-latest
+            command: npm run build:mac
+          - platform: Linux
+            os: ubuntu-latest
+            command: npm run build:linux
+    defaults:
+      run:
+        working-directory: fast-scribe-app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: fast-scribe-app/package-lock.json
+      - run: npm ci
+      - run: ${{ matrix.command }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fast-scribe-${{ matrix.platform }}
+          path: fast-scribe-app/dist-electron/*
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${{ github.ref_name }}" release-assets/* --generate-notes --title "Fast Scribe ${{ github.ref_name }}"
