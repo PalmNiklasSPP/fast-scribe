@@ -39,6 +39,18 @@ export interface TranscriptionEvent {
   outputPath?: string;
 }
 
+export interface PendingTranscriptOverwrite {
+  fileName: string;
+  outputPath: string;
+}
+
+export interface TranscriptionStartResult {
+  started: boolean;
+  overwrite?: {
+    outputPath: string;
+  };
+}
+
 export type UpdateStatus =
   | 'disabled'
   | 'idle'
@@ -76,7 +88,8 @@ declare global {
       startTranscription: (opts: {
         jobId: string;
         filePath: string;
-      }) => Promise<{ started: boolean }>;
+        overwrite?: boolean;
+      }) => Promise<TranscriptionStartResult>;
       cancelTranscription: (opts: { jobId: string }) => Promise<{ cancelled: boolean }>;
       onTranscriptionEvent: (
         jobId: string,

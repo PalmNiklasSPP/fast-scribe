@@ -179,7 +179,7 @@ ipcMain.handle('update:install', () => updateController.install());
 
 // --- IPC: Transcription ---
 
-ipcMain.handle('transcription:start', async (_event, { jobId, filePath }) => {
+ipcMain.handle('transcription:start', async (_event, { jobId, filePath, overwrite = false }) => {
   if (activeJobs.has(jobId)) {
     throw new Error(`Transcription job ${jobId} is already active.`);
   }
@@ -193,17 +193,8 @@ ipcMain.handle('transcription:start', async (_event, { jobId, filePath }) => {
       if (error?.code === 'ENOENT') return false;
       throw error;
     });
-  if (transcriptExists) {
-    const { response } = await dialog.showMessageBox(mainWindow, {
-      type: 'warning',
-      title: 'Overwrite transcript?',
-      message: `A transcript named "${path.basename(outputPath)}" already exists.`,
-      detail: `Transcribing "${path.basename(filePath)}" will replace it in "${outputDir}".`,
-      buttons: ['Cancel', 'Overwrite'],
-      defaultId: 0,
-      cancelId: 0,
-    });
-    if (response !== 1) return { started: false };
+  if (transcriptExists && !overwrite) {
+    return { started: false, overwrite: { outputPath } };
   }
 
   const sendEvent = (event) => {
