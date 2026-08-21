@@ -63,14 +63,39 @@ Settings are persisted in your OS app-data directory via `electron-store`.
 
 ## Building a distributable
 
+The project produces native installers, so end users do not need Node.js or
+`npm run dev`. Build an installer for the operating system you are using:
+
 ```bash
 cd fast-scribe-app
-npm run build:electron
+npm install
+npm run build:win    # Windows installer (.exe)
+# npm run build:mac  # macOS disk image (.dmg)
+# npm run build:linux # Linux portable app (.AppImage)
 ```
 
-Output appears in `fast-scribe-app/dist-electron/`. The Python script (`transcribe_cli.py`) is bundled as an extra resource.
+Output appears in `fast-scribe-app/dist-electron/`. On Windows, distribute the
+generated `Fast Scribe Setup *.exe`; recipients install it once and then launch
+Fast Scribe like any other desktop application. The Python script
+(`transcribe_cli.py`) is bundled as an extra resource.
 
-> **Note:** For the built app to invoke Python, the user must have Python + pydub + requests installed and accessible on PATH. A future improvement is to bundle a Python runtime.
+> **Note:** The installer removes the Node.js/npm requirement, but transcription
+> still requires Python, `pydub`, `requests`, and ffmpeg on the recipient's
+> machine. A fully self-contained installer will additionally need a bundled
+> Python runtime and ffmpeg.
+
+## Publishing downloadable installers
+
+Pushing a version tag triggers GitHub Actions to build Windows, macOS, and Linux
+installers and attach them to a GitHub Release:
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+Users can then download the appropriate file from the repository's
+**Releases** page.
 
 ## Architecture
 
