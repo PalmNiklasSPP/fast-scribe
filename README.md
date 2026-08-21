@@ -76,16 +76,9 @@ The final `.txt` file is published only after every chunk succeeds.
 
 ## Publishing downloadable installers
 
-Pushing a version tag triggers GitHub Actions to build Windows, macOS, and Linux
-installers and attach them to a GitHub Release:
-
-```bash
-git tag v1.0.0
-git push origin v1.0.0
-```
-
-Users can then download the appropriate file from the repository's
-**Releases** page.
+Follow [RELEASING.md](RELEASING.md). It uses a release-preparation command to
+update both package manifests before a version tag triggers the GitHub Actions
+build and GitHub Release.
 
 ## Architecture
 
