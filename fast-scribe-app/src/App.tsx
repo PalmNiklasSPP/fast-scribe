@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from "react"
-import { Mic2, Play, X, Trash2, AlertCircle, Settings } from "lucide-react"
+import { Mic2, Play, X, Trash2, AlertCircle, Settings, Download, RefreshCw } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { DropZone } from "@/components/DropZone"
@@ -8,7 +8,7 @@ import { SettingsPanel } from "@/components/SettingsPanel"
 import { ToastProvider, ToastViewport, Toast, ToastTitle, ToastDescription, ToastClose } from "@/components/ui/toast"
 import { useTranscription } from "@/hooks/useTranscription"
 import { useToast } from "@/hooks/useToast"
-import type { AppConfig } from "@/lib/types"
+import type { AppConfig, UpdateState } from "@/lib/types"
 
 const DEFAULT_CONFIG: AppConfig = {
   endpoint: "",
@@ -24,6 +24,7 @@ export default function App() {
   const [config, setConfig] = useState<AppConfig>(DEFAULT_CONFIG)
   const [configLoaded, setConfigLoaded] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [updateState, setUpdateState] = useState<UpdateState | null>(null)
   const { toasts, toast, dismiss } = useToast()
 
   useEffect(() => {
@@ -31,6 +32,10 @@ export default function App() {
       setConfig(cfg)
       setConfigLoaded(true)
     })
+
+    const unsubscribe = window.electronAPI.onUpdateState(setUpdateState)
+    window.electronAPI.getUpdateState().then(setUpdateState)
+    return unsubscribe
   }, [])
 
   const { files, addFiles, removeFile, clearCompleted, startTranscription, cancelAll } =
@@ -62,6 +67,27 @@ export default function App() {
       toast({ title: "Error", description: String(e), variant: "error" })
     }
   }
+
+  const handleUpdate = async () => {
+    try {
+      if (updateState?.status === "downloaded") {
+        await window.electronAPI.installUpdate()
+      } else {
+        await window.electronAPI.downloadUpdate()
+      }
+    } catch (error) {
+      toast({
+        title: "Update failed",
+        description: error instanceof Error ? error.message : String(error),
+        variant: "error",
+      })
+    }
+  }
+
+  const updateVisible =
+    updateState?.status === "available" ||
+    updateState?.status === "downloading" ||
+    updateState?.status === "downloaded"
 
   if (!configLoaded) {
     return (
@@ -97,6 +123,44 @@ export default function App() {
           <Separator />
 
         <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-5">
+          {updateVisible && (
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-violet-800/70 bg-violet-950/30 px-4 py-3 text-xs text-violet-200">
+              <div className="flex items-center gap-2">
+                {updateState.status === "downloading" ? (
+                  <RefreshCw size={14} className="animate-spin" />
+                ) : (
+                  <Download size={14} />
+                )}
+                <span>
+                  {updateState.status === "downloaded"
+                    ? `Fast Scribe ${updateState.version} is ready to install.`
+                    : updateState.status === "downloading"
+                      ? `Downloading Fast Scribe ${updateState.version}... ${updateState.progress ?? 0}%`
+                      : `Fast Scribe ${updateState.version} is available.`}
+                </span>
+              </div>
+              <Button
+                size="sm"
+                onClick={handleUpdate}
+                disabled={
+                  updateState.status === "downloading" ||
+                  (updateState.status === "downloaded" && isRunning)
+                }
+                title={
+                  updateState.status === "downloaded" && isRunning
+                    ? "Finish or cancel active transcriptions before updating"
+                    : undefined
+                }
+              >
+                {updateState.status === "downloaded" && isRunning
+                  ? "Finish transcription to update"
+                  : updateState.status === "downloaded"
+                    ? "Restart and update"
+                    : "Download update"}
+              </Button>
+            </div>
+          )}
+
           {configMissing && (
             <div className="flex items-center justify-between gap-3 rounded-lg border border-amber-900/60 bg-amber-950/30 px-4 py-2.5 text-xs text-amber-400">
               <div className="flex items-center gap-2">

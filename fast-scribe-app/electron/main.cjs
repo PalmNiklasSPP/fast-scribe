@@ -1,10 +1,12 @@
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
+const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const Store = require('electron-store').default;
 const {
   createTranscriptionJob,
   TranscriptionCancelledError,
 } = require('./transcription.cjs');
+const { createUpdateController } = require('./updater.cjs');
 
 const store = new Store({
   defaults: {
@@ -24,6 +26,16 @@ let mainWindow;
 const activeJobs = new Map();
 let allowQuit = false;
 let shutdownPromise = null;
+const updateController = createUpdateController({
+  autoUpdater,
+  currentVersion: app.getVersion(),
+  isPackaged: app.isPackaged,
+  sendState: (state) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('update:state', state);
+    }
+  },
+});
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -51,6 +63,10 @@ function createWindow() {
   } else {
     mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
   }
+
+  mainWindow.webContents.once('did-finish-load', () => {
+    updateController.initialize().catch(() => {});
+  });
 }
 
 app.whenReady().then(() => {
@@ -62,6 +78,10 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
+});
+
+app.on('will-quit', () => {
+  updateController.dispose();
 });
 
 app.on('before-quit', (event) => {
@@ -112,6 +132,13 @@ ipcMain.handle('dialog:openFolder', async () => {
 ipcMain.handle('shell:openPath', (_event, filePath) => {
   shell.showItemInFolder(filePath);
 });
+
+// --- IPC: Updates ---
+
+ipcMain.handle('update:getState', () => updateController.getState());
+ipcMain.handle('update:check', () => updateController.check());
+ipcMain.handle('update:download', () => updateController.download());
+ipcMain.handle('update:install', () => updateController.install());
 
 // --- IPC: Transcription ---
 
