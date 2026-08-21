@@ -1,4 +1,4 @@
-import { CheckCircle2, XCircle, Loader2, Clock, FolderOpen, X, FileAudio } from 'lucide-react'
+import { CheckCircle2, XCircle, Loader2, Clock, FileText, FolderOpen, X, FileAudio } from 'lucide-react'
 import { Progress } from '@/components/ui/progress'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -8,6 +8,7 @@ interface FileListProps {
   files: TranscriptionFile[]
   onRemove: (id: string) => void
   onOpenOutput: (path: string) => void
+  onReview: (id: string) => void
 }
 
 function statusIcon(status: TranscriptionFile['status']) {
@@ -40,7 +41,7 @@ function formatDuration(ms: number) {
   return `${Math.floor(s / 60)}m ${s % 60}s`
 }
 
-export function FileList({ files, onRemove, onOpenOutput }: FileListProps) {
+export function FileList({ files, onRemove, onOpenOutput, onReview }: FileListProps) {
   if (!files.length) return null
 
   return (
@@ -91,15 +92,26 @@ export function FileList({ files, onRemove, onOpenOutput }: FileListProps) {
 
               <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                 {file.status === 'done' && file.outputPath && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7"
-                    onClick={() => onOpenOutput(file.outputPath!)}
-                    title="Show in explorer"
-                  >
-                    <FolderOpen size={14} />
-                  </Button>
+                  <>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7"
+                      onClick={() => onReview(file.id)}
+                      title="Review transcript"
+                    >
+                      <FileText size={14} />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7"
+                      onClick={() => onOpenOutput(file.outputPath!)}
+                      title="Show in explorer"
+                    >
+                      <FolderOpen size={14} />
+                    </Button>
+                  </>
                 )}
                 {(file.status === 'idle' || file.status === 'done' || file.status === 'error' || file.status === 'cancelled') && (
                   <Button

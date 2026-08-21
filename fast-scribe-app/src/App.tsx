@@ -6,6 +6,7 @@ import { Separator } from "@/components/ui/separator"
 import { DropZone } from "@/components/DropZone"
 import { FileList } from "@/components/FileList"
 import { SettingsPanel } from "@/components/SettingsPanel"
+import { TranscriptPanel } from "@/components/TranscriptPanel"
 import { ToastProvider, ToastViewport, Toast, ToastTitle, ToastDescription, ToastClose } from "@/components/ui/toast"
 import { useTranscription } from "@/hooks/useTranscription"
 import { useToast } from "@/hooks/useToast"
@@ -25,6 +26,8 @@ export default function App() {
   const [config, setConfig] = useState<AppConfig>(DEFAULT_CONFIG)
   const [configLoaded, setConfigLoaded] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [selectedTranscriptId, setSelectedTranscriptId] = useState<string | null>(null)
+  const [transcriptDirty, setTranscriptDirty] = useState(false)
   const [updateState, setUpdateState] = useState<UpdateState | null>(null)
   const { toasts, toast, dismiss } = useToast()
 
@@ -61,8 +64,38 @@ export default function App() {
   const idleCount = files.filter((f) => f.status === "idle").length
   const doneCount = files.filter((f) => f.status === "done").length
   const errorCount = files.filter((f) => f.status === "error").length
+  const selectedTranscript = files.find((file) => file.id === selectedTranscriptId) ?? null
   const configMissing = !config.endpoint || !config.hasApiKey
   const pipelineSteps = useMemo(() => [] as string[], [])
+
+  const closeTranscript = () => {
+    if (transcriptDirty && !window.confirm("Discard unsaved transcript changes?")) {
+      return false
+    }
+    setSelectedTranscriptId(null)
+    setTranscriptDirty(false)
+    return true
+  }
+
+  const openSettings = () => {
+    if (closeTranscript()) setSettingsOpen(true)
+  }
+
+  const handleReviewTranscript = (id: string) => {
+    if (id === selectedTranscriptId || !closeTranscript()) return
+    setSettingsOpen(false)
+    setSelectedTranscriptId(id)
+  }
+
+  const handleRemoveFile = (id: string) => {
+    if (id === selectedTranscriptId && !closeTranscript()) return
+    removeFile(id)
+  }
+
+  const handleClearCompleted = () => {
+    if (selectedTranscript && !closeTranscript()) return
+    clearCompleted()
+  }
 
   const handleStart = async () => {
     if (configMissing) {
@@ -77,6 +110,14 @@ export default function App() {
   }
 
   const handleUpdate = async () => {
+    if (updateState?.status === "downloaded" && transcriptDirty) {
+      toast({
+        title: "Save or discard transcript changes",
+        description: "Close the transcript editor before restarting to update.",
+        variant: "error",
+      })
+      return
+    }
     try {
       if (updateState?.status === "downloaded") {
         await window.electronAPI.installUpdate()
@@ -96,6 +137,16 @@ export default function App() {
     updateState?.status === "available" ||
     updateState?.status === "downloading" ||
     updateState?.status === "downloaded"
+
+  useEffect(() => {
+    window.electronAPI.setTranscriptDirty(transcriptDirty).catch((error) => {
+      toast({
+        title: "Unsaved-change protection unavailable",
+        description: error instanceof Error ? error.message : String(error),
+        variant: "error",
+      })
+    })
+  }, [toast, transcriptDirty])
 
   if (!configLoaded) {
     return (
@@ -120,7 +171,13 @@ export default function App() {
                 variant={settingsOpen ? "outline" : "ghost"}
                 size="sm"
                 title="Settings"
-                onClick={() => setSettingsOpen((open) => !open)}
+                onClick={() => {
+                  if (settingsOpen) {
+                    setSettingsOpen(false)
+                  } else {
+                    openSettings()
+                  }
+                }}
               >
                 <Settings size={14} />
                 Settings
@@ -152,16 +209,22 @@ export default function App() {
                 onClick={handleUpdate}
                 disabled={
                   updateState.status === "downloading" ||
-                  (updateState.status === "downloaded" && isRunning)
+                  (updateState.status === "downloaded" && (isRunning || transcriptDirty))
                 }
                 title={
-                  updateState.status === "downloaded" && isRunning
-                    ? "Finish or cancel active transcriptions before updating"
+                  updateState.status === "downloaded"
+                    ? isRunning
+                      ? "Finish or cancel active transcriptions before updating"
+                      : transcriptDirty
+                        ? "Save or discard transcript changes before updating"
+                        : undefined
                     : undefined
                 }
               >
-                {updateState.status === "downloaded" && isRunning
-                  ? "Finish transcription to update"
+                {updateState.status === "downloaded" && (isRunning || transcriptDirty)
+                  ? isRunning
+                    ? "Finish transcription to update"
+                    : "Save transcript to update"
                   : updateState.status === "downloaded"
                     ? "Restart and update"
                     : "Download update"}
@@ -179,7 +242,7 @@ export default function App() {
                 variant="outline"
                 size="sm"
                 className="border-amber-800 text-amber-300 hover:bg-amber-900/40 hover:text-amber-200"
-                onClick={() => setSettingsOpen(true)}
+                onClick={openSettings}
               >
                 Open Settings
               </Button>
@@ -197,15 +260,16 @@ export default function App() {
                   {errorCount > 0 && ` · ${errorCount} error${errorCount !== 1 ? "s" : ""}`}
                 </span>
                 {(doneCount > 0 || errorCount > 0) && (
-                  <Button variant="ghost" size="sm" onClick={clearCompleted} className="h-6 gap-1 text-xs text-zinc-500">
+                  <Button variant="ghost" size="sm" onClick={handleClearCompleted} className="h-6 gap-1 text-xs text-zinc-500">
                     <Trash2 size={11} /> Clear completed
                   </Button>
                 )}
               </div>
               <FileList
                 files={files}
-                onRemove={removeFile}
+                onRemove={handleRemoveFile}
                 onOpenOutput={(p) => window.electronAPI.openInExplorer(p)}
+                onReview={handleReviewTranscript}
               />
             </>
           )}
@@ -253,6 +317,15 @@ export default function App() {
               onChooseSettingsImport={() => window.electronAPI.selectConfigImport()}
               onImportSettings={handleImportConfig}
               onClose={() => setSettingsOpen(false)}
+            />
+          )}
+          {selectedTranscript?.outputPath && (
+            <TranscriptPanel
+              key={selectedTranscript.id}
+              fileName={selectedTranscript.name}
+              outputPath={selectedTranscript.outputPath}
+              onClose={closeTranscript}
+              onDirtyChange={setTranscriptDirty}
             />
           )}
         </div>

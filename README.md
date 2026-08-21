@@ -49,7 +49,9 @@ Settings are persisted in your OS app-data directory via `electron-store`.
 2. Configure Settings on first run
 3. Drag audio files onto the drop zone (or click to browse)
 4. Click **Transcribe**
-5. Each file's status updates in real-time; click the folder icon to open the output location
+5. Each file's status updates in real-time
+6. Click the document icon on a completed file to review, edit, copy, or save its transcript
+7. Click the folder icon to open the output location
 
 ## Building a distributable
 
@@ -96,7 +98,8 @@ fast-scribe/
         │   ├── ui/            # shadcn/ui primitives (button, input, progress, …)
         │   ├── DropZone.tsx   # Drag-and-drop + file browser
         │   ├── FileList.tsx   # Per-file status rows with progress
-        │   └── SettingsPanel.tsx  # Modal settings form
+        │   ├── SettingsPanel.tsx  # Modal settings form
+        │   └── TranscriptPanel.tsx  # Completed transcript review and editing
         ├── hooks/
         │   ├── useTranscription.ts  # Job orchestration, IPC events
         │   └── useToast.ts          # Toast notifications

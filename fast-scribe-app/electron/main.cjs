@@ -1,9 +1,10 @@
-const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
+const { app, BrowserWindow, clipboard, ipcMain, dialog, shell } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const fs = require('fs/promises');
 const path = require('path');
 const Store = require('electron-store').default;
 const { createConfigService } = require('./config.cjs');
+const { createTranscriptFileService } = require('./transcript-files.cjs');
 const {
   createTranscriptionJob,
   TranscriptionCancelledError,
@@ -22,6 +23,7 @@ const store = new Store({
   },
 });
 const configService = createConfigService({ store, safeStorage: require('electron').safeStorage });
+const transcriptFiles = createTranscriptFileService();
 
 const isDev = process.env.NODE_ENV === 'development';
 
@@ -29,6 +31,9 @@ let mainWindow;
 const activeJobs = new Map();
 let allowQuit = false;
 let shutdownPromise = null;
+let hasUnsavedTranscript = false;
+let allowWindowClose = false;
+let isConfirmingTranscriptClose = false;
 const updateController = createUpdateController({
   autoUpdater,
   currentVersion: app.getVersion(),
@@ -41,6 +46,7 @@ const updateController = createUpdateController({
 });
 
 function createWindow() {
+  allowWindowClose = false;
   mainWindow = new BrowserWindow({
     width: 1100,
     height: 720,
@@ -69,6 +75,40 @@ function createWindow() {
 
   mainWindow.webContents.once('did-finish-load', () => {
     updateController.initialize().catch(() => {});
+  });
+
+  const closingWindow = mainWindow;
+  closingWindow.on('close', (event) => {
+    if (!hasUnsavedTranscript || allowWindowClose) return;
+
+    event.preventDefault();
+    if (isConfirmingTranscriptClose) return;
+    isConfirmingTranscriptClose = true;
+
+    dialog.showMessageBox(closingWindow, {
+      type: 'warning',
+      buttons: ['Keep editing', 'Discard changes'],
+      defaultId: 0,
+      cancelId: 0,
+      title: 'Unsaved transcript',
+      message: 'Discard unsaved transcript changes?',
+      detail: 'Your edits have not been written to the transcript file.',
+    }).then(({ response }) => {
+      if (response === 1) {
+        hasUnsavedTranscript = false;
+        allowWindowClose = true;
+        closingWindow.close();
+      } else {
+        allowQuit = false;
+        shutdownPromise = null;
+      }
+    }).catch((error) => {
+      console.error('Unable to confirm transcript close:', error);
+      allowQuit = false;
+      shutdownPromise = null;
+    }).finally(() => {
+      isConfirmingTranscriptClose = false;
+    });
   });
 }
 
@@ -169,6 +209,30 @@ ipcMain.handle('shell:openPath', (_event, filePath) => {
   shell.showItemInFolder(filePath);
 });
 
+// --- IPC: Transcript files ---
+
+ipcMain.handle('transcript:read', (_event, filePath) => {
+  return transcriptFiles.read(filePath);
+});
+
+ipcMain.handle('transcript:write', (_event, { filePath, content }) => {
+  return transcriptFiles.write(filePath, content);
+});
+
+ipcMain.handle('transcript:setDirty', (_event, dirty) => {
+  if (typeof dirty !== 'boolean') {
+    throw new Error('Transcript dirty state must be a boolean.');
+  }
+  hasUnsavedTranscript = dirty;
+});
+
+ipcMain.handle('clipboard:writeText', (_event, text) => {
+  if (typeof text !== 'string') {
+    throw new Error('Clipboard content must be text.');
+  }
+  clipboard.writeText(text);
+});
+
 // --- IPC: Updates ---
 
 ipcMain.handle('update:getState', () => updateController.getState());
@@ -199,7 +263,8 @@ ipcMain.handle('transcription:start', (_event, { jobId, filePath }) => {
 
   activeJobs.set(jobId, job);
   job.start()
-    .then(() => {
+    .then((outputPath) => {
+      transcriptFiles.allow(outputPath);
       sendEvent({ type: 'done', message: 'Transcription complete.' });
     })
     .catch((error) => {
