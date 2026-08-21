@@ -1,7 +1,7 @@
 {
   "name": "fast-scribe-app",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "description": "Desktop app for bulk audio transcription with Azure OpenAI.",
   "author": "PalmNiklasSPP",
   "repository": {
