@@ -30,6 +30,23 @@ export interface TranscriptionEvent {
   outputPath?: string;
 }
 
+export type UpdateStatus =
+  | 'disabled'
+  | 'idle'
+  | 'checking'
+  | 'available'
+  | 'downloading'
+  | 'downloaded'
+  | 'error';
+
+export interface UpdateState {
+  status: UpdateStatus;
+  currentVersion: string;
+  version?: string;
+  progress?: number;
+  error?: string;
+}
+
 // Extend window with Electron API
 declare global {
   interface Window {
@@ -39,6 +56,11 @@ declare global {
       openFiles: () => Promise<string[]>;
       openFolder: () => Promise<string | null>;
       openInExplorer: (filePath: string) => Promise<void>;
+      getUpdateState: () => Promise<UpdateState>;
+      checkForUpdates: () => Promise<UpdateState>;
+      downloadUpdate: () => Promise<UpdateState>;
+      installUpdate: () => Promise<void>;
+      onUpdateState: (callback: (state: UpdateState) => void) => () => void;
       startTranscription: (opts: {
         jobId: string;
         filePath: string;
