@@ -7,6 +7,7 @@ const { createConfigService } = require('./config.cjs');
 const { createTranscriptFileService } = require('./transcript-files.cjs');
 const {
   createTranscriptionJob,
+  getTranscriptOutputPath,
   TranscriptionCancelledError,
 } = require('./transcription.cjs');
 const { createUpdateController } = require('./updater.cjs');
@@ -242,13 +243,24 @@ ipcMain.handle('update:install', () => updateController.install());
 
 // --- IPC: Transcription ---
 
-ipcMain.handle('transcription:start', (_event, { jobId, filePath }) => {
+ipcMain.handle('transcription:start', async (_event, { jobId, filePath, overwrite = false }) => {
   if (activeJobs.has(jobId)) {
     throw new Error(`Transcription job ${jobId} is already active.`);
   }
 
   const config = configService.getPrivateConfig();
   const outputDir = config.outputDir || path.dirname(filePath);
+  const outputPath = getTranscriptOutputPath(filePath, outputDir);
+  const transcriptExists = await fs.access(outputPath)
+    .then(() => true)
+    .catch((error) => {
+      if (error?.code === 'ENOENT') return false;
+      throw error;
+    });
+  if (transcriptExists && !overwrite) {
+    return { started: false, overwrite: { outputPath } };
+  }
+
   const sendEvent = (event) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send(`transcription:event:${jobId}`, event);

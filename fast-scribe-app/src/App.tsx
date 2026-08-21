@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { DropZone } from "@/components/DropZone"
 import { FileList } from "@/components/FileList"
+import { OverwriteConfirmationDialog } from "@/components/OverwriteConfirmationDialog"
 import { SettingsPanel } from "@/components/SettingsPanel"
 import { TranscriptPanel } from "@/components/TranscriptPanel"
 import { ToastProvider, ToastViewport, Toast, ToastTitle, ToastDescription, ToastClose } from "@/components/ui/toast"
@@ -42,7 +43,16 @@ export default function App() {
     return unsubscribe
   }, [])
 
-  const { files, addFiles, removeFile, clearCompleted, startTranscription, cancelAll } =
+  const {
+    files,
+    addFiles,
+    removeFile,
+    clearCompleted,
+    startTranscription,
+    cancelAll,
+    pendingOverwrite,
+    resolveOverwrite,
+  } =
     useTranscription()
 
   const handleSaveConfig = async (updates: AppConfigUpdate) => {
@@ -339,6 +349,11 @@ export default function App() {
           <ToastClose onClick={() => dismiss(t.id)} />
         </Toast>
       ))}
+      <OverwriteConfirmationDialog
+        overwrite={pendingOverwrite}
+        onCancel={() => resolveOverwrite(false)}
+        onConfirm={() => resolveOverwrite(true)}
+      />
     </ToastProvider>
   )
 }
