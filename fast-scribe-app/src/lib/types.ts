@@ -1,11 +1,20 @@
 export interface AppConfig {
   endpoint: string;
-  apiKey: string;
   model: string;
   outputDir: string;
   chunkDurationMs: number;
   language: string;
   theme: 'light' | 'dark' | 'system';
+  hasApiKey: boolean;
+}
+
+export interface AppConfigUpdate extends Partial<Omit<AppConfig, 'hasApiKey'>> {
+  apiKey?: string;
+}
+
+export interface SettingsFileResult {
+  cancelled: boolean;
+  filePath?: string;
 }
 
 export type FileStatus = 'idle' | 'queued' | 'converting' | 'transcribing' | 'done' | 'error' | 'cancelled';
@@ -52,7 +61,10 @@ declare global {
   interface Window {
     electronAPI: {
       getConfig: () => Promise<AppConfig>;
-      setConfig: (updates: Partial<AppConfig>) => Promise<AppConfig>;
+      setConfig: (updates: AppConfigUpdate) => Promise<AppConfig>;
+      exportConfig: (passphrase: string) => Promise<SettingsFileResult>;
+      selectConfigImport: () => Promise<SettingsFileResult>;
+      importConfig: (filePath: string, passphrase: string) => Promise<AppConfig>;
       openFiles: () => Promise<string[]>;
       openFolder: () => Promise<string | null>;
       openInExplorer: (filePath: string) => Promise<void>;
@@ -64,7 +76,6 @@ declare global {
       startTranscription: (opts: {
         jobId: string;
         filePath: string;
-        config: AppConfig;
       }) => Promise<{ started: boolean }>;
       cancelTranscription: (opts: { jobId: string }) => Promise<{ cancelled: boolean }>;
       onTranscriptionEvent: (

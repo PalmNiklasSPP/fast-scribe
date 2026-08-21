@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef } from 'react'
-import type { AppConfig, TranscriptionFile } from '@/lib/types'
+import type { TranscriptionFile } from '@/lib/types'
 
-export function useTranscription(config: AppConfig) {
+export function useTranscription() {
   const [files, setFiles] = useState<TranscriptionFile[]>([])
   const cancelRequested = useRef(false)
 
@@ -81,7 +81,6 @@ export function useTranscription(config: AppConfig) {
         await window.electronAPI.startTranscription({
           jobId: file.id,
           filePath: file.path,
-          config,
         })
         await terminalEvent
       } catch (error) {
@@ -93,7 +92,7 @@ export function useTranscription(config: AppConfig) {
         })
       }
     }
-  }, [files, config, updateFile])
+  }, [files, updateFile])
 
   const cancelAll = useCallback(async () => {
     cancelRequested.current = true

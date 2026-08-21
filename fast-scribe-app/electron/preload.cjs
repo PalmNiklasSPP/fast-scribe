@@ -4,6 +4,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Config
   getConfig: () => ipcRenderer.invoke('config:get'),
   setConfig: (updates) => ipcRenderer.invoke('config:set', updates),
+  exportConfig: (passphrase) => ipcRenderer.invoke('config:export', passphrase),
+  selectConfigImport: () => ipcRenderer.invoke('config:selectImport'),
+  importConfig: (filePath, passphrase) => ipcRenderer.invoke('config:import', filePath, passphrase),
 
   // Dialogs
   openFiles: () => ipcRenderer.invoke('dialog:openFiles'),

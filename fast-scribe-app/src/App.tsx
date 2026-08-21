@@ -9,16 +9,16 @@ import { SettingsPanel } from "@/components/SettingsPanel"
 import { ToastProvider, ToastViewport, Toast, ToastTitle, ToastDescription, ToastClose } from "@/components/ui/toast"
 import { useTranscription } from "@/hooks/useTranscription"
 import { useToast } from "@/hooks/useToast"
-import type { AppConfig, UpdateState } from "@/lib/types"
+import type { AppConfig, AppConfigUpdate, UpdateState } from "@/lib/types"
 
 const DEFAULT_CONFIG: AppConfig = {
   endpoint: "",
-  apiKey: "",
   model: "gpt-4o-transcribe",
   outputDir: "",
   chunkDurationMs: 600000,
   language: "auto",
   theme: "system",
+  hasApiKey: false,
 }
 
 export default function App() {
@@ -40,12 +40,19 @@ export default function App() {
   }, [])
 
   const { files, addFiles, removeFile, clearCompleted, startTranscription, cancelAll } =
-    useTranscription(config)
+    useTranscription()
 
-  const handleSaveConfig = async (updates: Partial<AppConfig>) => {
+  const handleSaveConfig = async (updates: AppConfigUpdate) => {
     const updated = await window.electronAPI.setConfig(updates)
     setConfig(updated)
     toast({ title: "Settings saved" })
+  }
+
+  const handleImportConfig = async (filePath: string, passphrase: string) => {
+    const updated = await window.electronAPI.importConfig(filePath, passphrase)
+    setConfig(updated)
+    toast({ title: "Settings imported", description: "Your model settings and API key are ready to use." })
+    return updated
   }
 
   const isRunning = files.some(
@@ -54,7 +61,7 @@ export default function App() {
   const idleCount = files.filter((f) => f.status === "idle").length
   const doneCount = files.filter((f) => f.status === "done").length
   const errorCount = files.filter((f) => f.status === "error").length
-  const configMissing = !config.endpoint || !config.apiKey
+  const configMissing = !config.endpoint || !config.hasApiKey
   const pipelineSteps = useMemo(() => [] as string[], [])
 
   const handleStart = async () => {
@@ -242,6 +249,9 @@ export default function App() {
             <SettingsPanel
               config={config}
               onSave={handleSaveConfig}
+              onExportSettings={(passphrase) => window.electronAPI.exportConfig(passphrase)}
+              onChooseSettingsImport={() => window.electronAPI.selectConfigImport()}
+              onImportSettings={handleImportConfig}
               onClose={() => setSettingsOpen(false)}
             />
           )}

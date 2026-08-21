@@ -2,6 +2,14 @@
 
 Electron and React desktop client for bulk audio transcription.
 
+## Secure settings transfer
+
+Use **Settings > Export** to create a password-protected `.fss` settings file and
+**Settings > Import** to use it on another device. The export includes the Azure endpoint,
+model, API key, and transcription preferences, but leaves each device's output folder unchanged.
+The API key is encrypted with the operating system's secure storage locally and is only decrypted
+inside Electron's main process when a transcription request starts.
+
 ## Releases and automatic updates
 
 Packaged builds check the public GitHub Releases feed when the app opens and every four
