@@ -78,10 +78,15 @@ export function useTranscription() {
       })
 
       try {
-        await window.electronAPI.startTranscription({
+        const { started } = await window.electronAPI.startTranscription({
           jobId: file.id,
           filePath: file.path,
         })
+        if (!started) {
+          unsubscribe()
+          updateFile(file.id, { status: 'idle', progress: 0, startedAt: undefined })
+          continue
+        }
         await terminalEvent
       } catch (error) {
         unsubscribe()

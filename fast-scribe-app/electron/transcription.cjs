@@ -60,6 +60,11 @@ function throwIfCancelled(signal) {
   }
 }
 
+function getTranscriptOutputPath(inputPath, outputDir) {
+  const resolvedOutputDir = outputDir || path.dirname(path.resolve(inputPath));
+  return path.join(resolvedOutputDir, `${path.parse(inputPath).name}.txt`);
+}
+
 function segmentAudio({
   ffmpegPath,
   inputPath,
@@ -222,8 +227,8 @@ async function runTranscription(
   }
 
   const resolvedOutputDir = outputDir || path.dirname(path.resolve(inputPath));
+  const outputPath = getTranscriptOutputPath(inputPath, outputDir);
   const baseName = path.parse(inputPath).name;
-  const outputPath = path.join(resolvedOutputDir, `${baseName}.txt`);
   const temporaryOutputPath = path.join(
     resolvedOutputDir,
     `.${baseName}.${randomUUIDImpl()}.tmp`,
@@ -319,6 +324,7 @@ module.exports = {
   TranscriptionCancelledError,
   buildFfmpegArgs,
   createTranscriptionJob,
+  getTranscriptOutputPath,
   resolveFfmpegPath,
   runTranscription,
   segmentAudio,

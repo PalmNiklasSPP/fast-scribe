@@ -6,6 +6,7 @@ const Store = require('electron-store').default;
 const { createConfigService } = require('./config.cjs');
 const {
   createTranscriptionJob,
+  getTranscriptOutputPath,
   TranscriptionCancelledError,
 } = require('./transcription.cjs');
 const { createUpdateController } = require('./updater.cjs');
@@ -178,13 +179,33 @@ ipcMain.handle('update:install', () => updateController.install());
 
 // --- IPC: Transcription ---
 
-ipcMain.handle('transcription:start', (_event, { jobId, filePath }) => {
+ipcMain.handle('transcription:start', async (_event, { jobId, filePath }) => {
   if (activeJobs.has(jobId)) {
     throw new Error(`Transcription job ${jobId} is already active.`);
   }
 
   const config = configService.getPrivateConfig();
   const outputDir = config.outputDir || path.dirname(filePath);
+  const outputPath = getTranscriptOutputPath(filePath, outputDir);
+  const transcriptExists = await fs.access(outputPath)
+    .then(() => true)
+    .catch((error) => {
+      if (error?.code === 'ENOENT') return false;
+      throw error;
+    });
+  if (transcriptExists) {
+    const { response } = await dialog.showMessageBox(mainWindow, {
+      type: 'warning',
+      title: 'Overwrite transcript?',
+      message: `A transcript named "${path.basename(outputPath)}" already exists.`,
+      detail: `Transcribing "${path.basename(filePath)}" will replace it in "${outputDir}".`,
+      buttons: ['Cancel', 'Overwrite'],
+      defaultId: 0,
+      cancelId: 0,
+    });
+    if (response !== 1) return { started: false };
+  }
+
   const sendEvent = (event) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send(`transcription:event:${jobId}`, event);

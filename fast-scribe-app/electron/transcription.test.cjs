@@ -8,6 +8,7 @@ const {
   TranscriptionCancelledError,
   buildFfmpegArgs,
   createTranscriptionJob,
+  getTranscriptOutputPath,
   resolveFfmpegPath,
   runTranscription,
   segmentAudio,
@@ -55,6 +56,13 @@ test('buildFfmpegArgs creates PCM segments with the configured duration', () => 
     '1',
     'chunk_%05d.wav',
   ]);
+});
+
+test('getTranscriptOutputPath uses the source name in the selected output directory', () => {
+  assert.equal(
+    getTranscriptOutputPath('/recordings/meeting.m4a', '/transcripts'),
+    path.join('/transcripts', 'meeting.txt'),
+  );
 });
 
 test('segmentAudio runs the bundled FFmpeg binary', async () => {
