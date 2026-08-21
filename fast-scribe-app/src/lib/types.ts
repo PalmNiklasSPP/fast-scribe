@@ -24,7 +24,7 @@ export interface TranscriptionFile {
 }
 
 export interface TranscriptionEvent {
-  type: 'progress' | 'done' | 'error' | 'log' | 'output_path';
+  type: 'progress' | 'done' | 'error' | 'cancelled' | 'log' | 'output_path';
   message?: string;
   progress?: number;
   outputPath?: string;

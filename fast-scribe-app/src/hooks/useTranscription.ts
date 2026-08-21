@@ -1,8 +1,9 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import type { AppConfig, TranscriptionFile } from '@/lib/types'
 
 export function useTranscription(config: AppConfig) {
   const [files, setFiles] = useState<TranscriptionFile[]>([])
+  const cancelRequested = useRef(false)
 
   const updateFile = useCallback((id: string, updates: Partial<TranscriptionFile>) => {
     setFiles((prev) => prev.map((f) => (f.id === id ? { ...f, ...updates } : f)))
@@ -27,20 +28,19 @@ export function useTranscription(config: AppConfig) {
     const toProcess = files.filter((f) => f.status === 'idle')
     if (!toProcess.length) return
 
+    cancelRequested.current = false
+
     // Mark all as queued
     toProcess.forEach((f) => updateFile(f.id, { status: 'queued' }))
 
     for (const file of toProcess) {
+      if (cancelRequested.current) break
+
       updateFile(file.id, { status: 'converting', progress: 5, startedAt: Date.now() })
 
-      await window.electronAPI.startTranscription({
-        jobId: file.id,
-        filePath: file.path,
-        config,
-      })
-
-      await new Promise<void>((resolve) => {
-        const unsub = window.electronAPI.onTranscriptionEvent(file.id, (event) => {
+      let unsubscribe = () => {}
+      const terminalEvent = new Promise<void>((resolve) => {
+        unsubscribe = window.electronAPI.onTranscriptionEvent(file.id, (event) => {
           switch (event.type) {
             case 'progress':
               updateFile(file.id, {
@@ -53,7 +53,15 @@ export function useTranscription(config: AppConfig) {
               break
             case 'done':
               updateFile(file.id, { status: 'done', progress: 100, finishedAt: Date.now() })
-              unsub()
+              unsubscribe()
+              resolve()
+              break
+            case 'cancelled':
+              updateFile(file.id, {
+                status: 'cancelled',
+                finishedAt: Date.now(),
+              })
+              unsubscribe()
               resolve()
               break
             case 'error':
@@ -62,22 +70,42 @@ export function useTranscription(config: AppConfig) {
                 error: event.message ?? 'Unknown error',
                 finishedAt: Date.now(),
               })
-              unsub()
+              unsubscribe()
               resolve()
               break
           }
         })
       })
+
+      try {
+        await window.electronAPI.startTranscription({
+          jobId: file.id,
+          filePath: file.path,
+          config,
+        })
+        await terminalEvent
+      } catch (error) {
+        unsubscribe()
+        updateFile(file.id, {
+          status: 'error',
+          error: error instanceof Error ? error.message : 'Failed to start transcription',
+          finishedAt: Date.now(),
+        })
+      }
     }
   }, [files, config, updateFile])
 
   const cancelAll = useCallback(async () => {
+    cancelRequested.current = true
     const active = files.filter(
       (f) => f.status === 'transcribing' || f.status === 'converting' || f.status === 'queued'
     )
     for (const f of active) {
-      await window.electronAPI.cancelTranscription({ jobId: f.id })
-      updateFile(f.id, { status: 'cancelled' })
+      if (f.status === 'queued') {
+        updateFile(f.id, { status: 'cancelled', finishedAt: Date.now() })
+      } else {
+        await window.electronAPI.cancelTranscription({ jobId: f.id })
+      }
     }
   }, [files, updateFile])
 

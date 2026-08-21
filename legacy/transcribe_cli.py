@@ -1,5 +1,5 @@
 """
-Fast Scribe — Transcription CLI
+Legacy Fast Scribe transcription CLI retained as an unpackaged reference.
 Usage: python transcribe_cli.py <file> --endpoint <url> --api-key <key> [options]
 
 Emits JSON events to stdout for the Electron host to consume:
