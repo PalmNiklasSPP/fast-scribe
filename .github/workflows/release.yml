@@ -36,7 +36,7 @@ jobs:
           cache: npm
           cache-dependency-path: fast-scribe-app/package-lock.json
       - name: Verify tag matches app version
-        run: node -e "const v='v'+require('./package.json').version, t=process.env.GITHUB_REF_NAME; if (v!==t) throw new Error(`Release tag ${t} does not match package.json version ${v}. Bump the version in fast-scribe-app/package.json and re-tag.`)"
+        run: node scripts/verify-release-version.mjs
       - run: npm ci
       - run: ${{ matrix.command }}
       - uses: actions/upload-artifact@v4
