@@ -1,7 +1,9 @@
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const { autoUpdater } = require('electron-updater');
+const fs = require('fs/promises');
 const path = require('path');
 const Store = require('electron-store').default;
+const { createConfigService } = require('./config.cjs');
 const {
   createTranscriptionJob,
   TranscriptionCancelledError,
@@ -11,7 +13,7 @@ const { createUpdateController } = require('./updater.cjs');
 const store = new Store({
   defaults: {
     endpoint: '',
-    apiKey: '',
+    encryptedApiKey: '',
     model: 'gpt-4o-transcribe',
     outputDir: '',
     chunkDurationMs: 600000,
@@ -19,6 +21,7 @@ const store = new Store({
     theme: 'system',
   },
 });
+const configService = createConfigService({ store, safeStorage: require('electron').safeStorage });
 
 const isDev = process.env.NODE_ENV === 'development';
 
@@ -103,11 +106,10 @@ app.on('before-quit', (event) => {
 
 // --- IPC: Config ---
 
-ipcMain.handle('config:get', () => store.store);
+ipcMain.handle('config:get', () => configService.getPublicConfig());
 
 ipcMain.handle('config:set', (_event, updates) => {
-  store.set(updates);
-  return store.store;
+  return configService.updateConfig(updates);
 });
 
 // --- IPC: File dialog ---
@@ -129,6 +131,40 @@ ipcMain.handle('dialog:openFolder', async () => {
   return result.filePaths[0] ?? null;
 });
 
+ipcMain.handle('config:export', async (_event, passphrase) => {
+  const result = await dialog.showSaveDialog(mainWindow, {
+    defaultPath: 'fast-scribe-settings.fss',
+    filters: [{ name: 'Fast Scribe settings', extensions: ['fss'] }],
+  });
+  if (result.canceled || !result.filePath) return { cancelled: true };
+
+  const tempPath = `${result.filePath}.tmp`;
+  try {
+    await fs.writeFile(tempPath, configService.exportSettings(passphrase), 'utf8');
+    await fs.rename(tempPath, result.filePath);
+  } finally {
+    await fs.rm(tempPath, { force: true });
+  }
+  return { cancelled: false, filePath: result.filePath };
+});
+
+ipcMain.handle('config:selectImport', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ['openFile'],
+    filters: [{ name: 'Fast Scribe settings', extensions: ['fss'] }],
+  });
+  if (result.canceled || !result.filePaths[0]) return { cancelled: true };
+  return { cancelled: false, filePath: result.filePaths[0] };
+});
+
+ipcMain.handle('config:import', async (_event, filePath, passphrase) => {
+  if (typeof filePath !== 'string') {
+    throw new Error('Select a settings file to import.');
+  }
+  const serialized = await fs.readFile(filePath, 'utf8');
+  return configService.importSettings(serialized, passphrase);
+});
+
 ipcMain.handle('shell:openPath', (_event, filePath) => {
   shell.showItemInFolder(filePath);
 });
@@ -142,11 +178,12 @@ ipcMain.handle('update:install', () => updateController.install());
 
 // --- IPC: Transcription ---
 
-ipcMain.handle('transcription:start', (_event, { jobId, filePath, config }) => {
+ipcMain.handle('transcription:start', (_event, { jobId, filePath }) => {
   if (activeJobs.has(jobId)) {
     throw new Error(`Transcription job ${jobId} is already active.`);
   }
 
+  const config = configService.getPrivateConfig();
   const outputDir = config.outputDir || path.dirname(filePath);
   const sendEvent = (event) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
