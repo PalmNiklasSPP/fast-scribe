@@ -12,6 +12,7 @@ const { PublicationError, publishArtifacts, serializerFor } = require('./destina
 const { createRunStore } = require('./run-store.cjs');
 const {
   createTranscriptionJob,
+  getTranscriptOutputPath,
   TranscriptionCancelledError,
 } = require('./transcription.cjs');
 const { createUpdateController } = require('./updater.cjs');
@@ -315,7 +316,7 @@ ipcMain.handle('update:install', () => {
 
 // --- IPC: Transcription ---
 
-ipcMain.handle('transcription:start', async (_event, { jobId, filePath }) => {
+ipcMain.handle('transcription:start', async (_event, { jobId, filePath, overwrite = false }) => {
   if (typeof jobId !== 'string' || !jobId || typeof filePath !== 'string' || !path.isAbsolute(filePath)) {
     throw new Error('A job ID and absolute input file path are required.');
   }
@@ -327,6 +328,17 @@ ipcMain.handle('transcription:start', async (_event, { jobId, filePath }) => {
   try {
     const config = configService.getPrivateConfig();
     const outputDir = config.outputDir || path.dirname(filePath);
+    const outputPath = getTranscriptOutputPath(filePath, outputDir);
+    const transcriptExists = await fs.access(outputPath)
+      .then(() => true)
+      .catch((error) => {
+        if (error?.code === 'ENOENT') return false;
+        throw error;
+      });
+    if (transcriptExists && !overwrite) {
+      return { started: false, overwrite: { outputPath } };
+    }
+
     const pipelineRecord = pipelineService.getSelectedPipeline();
     const pipeline = pipelineRecord.pipeline;
     const run = await runStore.create({ sourcePath: filePath, pipeline: pipelineRecord });
