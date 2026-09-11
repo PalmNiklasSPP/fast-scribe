@@ -45,6 +45,14 @@ test('run store persists manifests and typed artifacts across instances', async 
       finalArtifactId: artifact.id,
       outputPath: path.join(root, 'recording.txt'),
       finishedAt: '2026-09-11T10:01:00.000Z',
+      publication: [{
+        id: 'primary',
+        kind: 'primary',
+        artifactId: artifact.id,
+        artifactType: artifact.type,
+        path: path.join(root, 'recording.txt'),
+        status: 'published',
+      }],
     });
 
     const restartedStore = createRunStore({
@@ -52,6 +60,7 @@ test('run store persists manifests and typed artifacts across instances', async 
       randomUUIDImpl: () => '44444444-4444-4444-8444-444444444444',
     });
     assert.equal((await restartedStore.list())[0].status, 'completed');
+    assert.equal((await restartedStore.get(run.id)).publication[0].status, 'published');
     assert.equal((await restartedStore.readArtifact(run.id, artifact.id)).value, 'Raw transcript');
   } finally {
     await fs.rm(root, { recursive: true, force: true });

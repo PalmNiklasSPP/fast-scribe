@@ -12,7 +12,7 @@ const { createPipelineService } = require('./pipeline-service.cjs');
 
 function placeholderPipeline() {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     nodes: [{
       id: 'anonymize',
       pluginId: 'fast-scribe.placeholder-anonymizer',
@@ -24,6 +24,17 @@ function placeholderPipeline() {
       to: { nodeId: 'anonymize', portId: 'text' },
     }],
     output: { nodeId: 'anonymize', portId: 'text' },
+    layout: { anonymize: { x: 120, y: 240 } },
+    destinations: [],
+  };
+}
+
+function createMemoryStore(values = {}) {
+  return {
+    get: (key, fallback) => Object.hasOwn(values, key) ? values[key] : fallback,
+    set: (key, value) => {
+      values[key] = structuredClone(value);
+    },
   };
 }
 
@@ -59,8 +70,23 @@ test('placeholder anonymizer transforms text and emits a replacement map', async
   });
 });
 
-test('pipeline validation rejects missing inputs, unavailable plugins, and cycles', () => {
+test('pipeline validation rejects invalid layout, destinations, missing inputs, unavailable plugins, and cycles', () => {
   const { plugins } = createPluginSystem();
+  const invalidLayout = placeholderPipeline();
+  invalidLayout.layout.anonymize.x = Number.NaN;
+  assert.match(validatePipeline(invalidLayout, plugins).errors.join(' '), /layout position/);
+
+  const invalidDestination = placeholderPipeline();
+  invalidDestination.destinations = [{
+    id: 'map',
+    from: { nodeId: 'anonymize', portId: 'map' },
+    artifactType: 'fast-scribe/anonymization-map',
+    serializer: 'txt',
+    folderMode: 'settings',
+    filenameTemplate: '../map',
+  }];
+  assert.match(validatePipeline(invalidDestination, plugins).errors.join(' '), /serializer|filename template/);
+
   const missingInput = placeholderPipeline();
   missingInput.connections = [];
   assert.match(validatePipeline(missingInput, plugins).errors.join(' '), /not connected/);
@@ -77,37 +103,67 @@ test('pipeline validation rejects missing inputs, unavailable plugins, and cycle
     config: {},
   });
   cyclic.connections = [
-    {
-      from: { nodeId: 'second', portId: 'text' },
-      to: { nodeId: 'anonymize', portId: 'text' },
-    },
-    {
-      from: { nodeId: 'anonymize', portId: 'text' },
-      to: { nodeId: 'second', portId: 'text' },
-    },
+    { from: { nodeId: 'second', portId: 'text' }, to: { nodeId: 'anonymize', portId: 'text' } },
+    { from: { nodeId: 'anonymize', portId: 'text' }, to: { nodeId: 'second', portId: 'text' } },
   ];
   assert.match(validatePipeline(cyclic, plugins).errors.join(' '), /cycle/);
 });
 
-test('pipeline service persists only valid pipeline definitions', () => {
-  const values = {};
-  const store = {
-    get: (key, fallback) => Object.hasOwn(values, key) ? values[key] : fallback,
-    set: (key, value) => {
-      values[key] = value;
-    },
-  };
+test('pipeline service migrates legacy storage and persists selected revisions', () => {
+  const legacy = placeholderPipeline();
+  legacy.schemaVersion = 1;
+  delete legacy.layout;
+  delete legacy.destinations;
+  const values = { pluginPipeline: legacy };
   const { plugins } = createPluginSystem();
-  const service = createPipelineService({ store, plugins });
+  const changes = [];
+  const service = createPipelineService({
+    store: createMemoryStore(values),
+    plugins,
+    nowImpl: () => '2026-09-11T00:00:00.000Z',
+    randomUUIDImpl: () => 'created-pipeline',
+    onSelectedPipelineChange: (state) => changes.push(state),
+  });
 
-  assert.deepEqual(service.getPipeline(), createEmptyPipeline());
-  assert.deepEqual(service.savePipeline(placeholderPipeline()), placeholderPipeline());
-  assert.throws(() => service.savePipeline({}), /Invalid pipeline/);
+  const migrated = service.getPipeline();
+  assert.equal(migrated.pipeline.id, 'default');
+  assert.equal(migrated.pipeline.pipeline.schemaVersion, 2);
+  assert.deepEqual(migrated.pipeline.pipeline.layout, {});
+  assert.equal(service.listPipelines().selected.revision, 1);
+
+  const saved = service.savePipeline({
+    id: migrated.pipeline.id,
+    name: 'Processed transcript',
+    pipeline: migrated.pipeline.pipeline,
+    expectedRevision: 1,
+  });
+  assert.equal(saved.pipeline.revision, 2);
+  assert.equal(changes.length, 1);
+  assert.throws(() => service.savePipeline({
+    id: migrated.pipeline.id,
+    name: 'Stale',
+    pipeline: migrated.pipeline.pipeline,
+    expectedRevision: 1,
+  }), /changed in another window/);
+});
+
+test('pipeline service exposes unavailable plugins as a recoverable state', () => {
+  const invalid = placeholderPipeline();
+  invalid.nodes[0].pluginVersion = 'missing';
+  const { plugins } = createPluginSystem();
+  const service = createPipelineService({
+    store: createMemoryStore({ pluginPipeline: invalid }),
+    plugins,
+  });
+
+  const state = service.getPipeline();
+  assert.equal(state.recoverable, true);
+  assert.match(state.validation.errors.join(' '), /unavailable/);
+  assert.throws(() => service.getSelectedPipeline(), /unavailable/);
 });
 
 test('pipeline persists the raw artifact before a plugin failure', async () => {
   const { artifactTypes, plugins } = createPluginSystem();
-  const persisted = [];
   plugins.register({
     manifest: {
       id: 'test.failing',
@@ -116,11 +172,7 @@ test('pipeline persists the raw artifact before a plugin failure', async () => {
       description: 'Fails for execution testing.',
       inputs: [{ id: 'text', type: TEXT_ARTIFACT_TYPE, required: true }],
       outputs: [{ id: 'text', type: TEXT_ARTIFACT_TYPE, required: true }],
-      configSchema: {
-        type: 'object',
-        properties: {},
-        additionalProperties: false,
-      },
+      configSchema: { type: 'object', properties: {}, additionalProperties: false },
     },
     execute: async () => {
       throw new Error('plugin failed');
@@ -129,6 +181,7 @@ test('pipeline persists the raw artifact before a plugin failure', async () => {
   const pipeline = placeholderPipeline();
   pipeline.nodes[0].pluginId = 'test.failing';
 
+  const persisted = [];
   await assert.rejects(
     runPipeline({
       pipeline,

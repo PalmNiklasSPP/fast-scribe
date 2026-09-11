@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { AlertCircle, Clipboard, Download, Loader2, Save, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import type { TranscriptionFile } from '@/lib/types'
+import type { RunArtifact, TranscriptionFile } from '@/lib/types'
 
 interface TranscriptPanelProps {
   fileName: TranscriptionFile['name']
@@ -28,14 +28,17 @@ export function TranscriptPanel({
   const [actionError, setActionError] = useState('')
   const [message, setMessage] = useState('')
   const [loadAttempt, setLoadAttempt] = useState(0)
-  const [view, setView] = useState<'final' | 'raw'>('final')
+  const [view, setView] = useState<'final' | 'raw' | 'artifact'>('final')
+  const [selectedArtifact, setSelectedArtifact] = useState<RunArtifact | null>(null)
   const isDirty = content !== savedContent
   const canViewRaw = Boolean(runId && rawArtifactId)
 
   useEffect(() => {
     let active = true
 
-    const loadTranscript = view === 'raw' && runId && rawArtifactId
+    const loadTranscript = view === 'artifact' && selectedArtifact
+      ? Promise.resolve(JSON.stringify(selectedArtifact.value, null, 2))
+      : view === 'raw' && runId && rawArtifactId
       ? window.electronAPI.readRunArtifact<string>(runId, rawArtifactId).then((artifact) => artifact.value)
       : window.electronAPI.readTranscript(outputPath)
 
@@ -56,7 +59,7 @@ export function TranscriptPanel({
     return () => {
       active = false
     }
-  }, [outputPath, runId, rawArtifactId, view, loadAttempt])
+  }, [outputPath, runId, rawArtifactId, selectedArtifact, view, loadAttempt])
 
   useEffect(() => {
     onDirtyChange(isDirty)
@@ -90,6 +93,38 @@ export function TranscriptPanel({
       if (!result.cancelled) setMessage('Raw transcript exported.')
     } catch (exportError) {
       setActionError(exportError instanceof Error ? exportError.message : 'Unable to export raw transcript.')
+    }
+  }
+
+  const handleInspectArtifact = async () => {
+    if (!runId) return
+    setActionError('')
+    setMessage('')
+    try {
+      const run = await window.electronAPI.getRun(runId)
+      const artifact = run.artifacts.find((candidate) => candidate.type !== 'fast-scribe/text')
+      if (!artifact) {
+        setMessage('This run has no additional artifacts.')
+        return
+      }
+      const fullArtifact = await window.electronAPI.readRunArtifact(runId, artifact.id)
+      setSelectedArtifact(fullArtifact)
+      setView('artifact')
+      setIsLoading(true)
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Unable to inspect run artifacts.')
+    }
+  }
+
+  const handleExportArtifact = async () => {
+    if (!runId || !selectedArtifact) return
+    setActionError('')
+    setMessage('')
+    try {
+      const result = await window.electronAPI.exportRunArtifact(runId, selectedArtifact.id)
+      if (!result.cancelled) setMessage('Artifact exported.')
+    } catch (exportError) {
+      setActionError(exportError instanceof Error ? exportError.message : 'Unable to export this artifact.')
     }
   }
 
@@ -140,6 +175,11 @@ export function TranscriptPanel({
               ))}
             </div>
           )}
+          {runId && (
+            <Button variant="ghost" size="sm" onClick={() => { void handleInspectArtifact() }}>
+              Inspect artifacts
+            </Button>
+          )}
           {isDirty && <span className="text-xs text-amber-400">Unsaved</span>}
           <Button variant="ghost" size="icon" title="Close transcript" onClick={onClose}>
             <X size={16} />
@@ -166,7 +206,7 @@ export function TranscriptPanel({
             <textarea
               aria-label={`Transcript for ${fileName}`}
               spellCheck
-              readOnly={view === 'raw'}
+              readOnly={view !== 'final'}
               value={content}
               onChange={(event) => {
                 setContent(event.target.value)
@@ -193,7 +233,11 @@ export function TranscriptPanel({
           <Button variant="outline" onClick={handleCopy}>
             <Clipboard size={14} /> Copy
           </Button>
-          {view === 'raw' ? (
+          {view === 'artifact' ? (
+            <Button onClick={() => { void handleExportArtifact() }}>
+              <Download size={14} /> Export artifact
+            </Button>
+          ) : view === 'raw' ? (
             <Button onClick={handleExportRaw}>
               <Download size={14} /> Export raw
             </Button>

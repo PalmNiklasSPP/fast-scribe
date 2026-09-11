@@ -73,6 +73,7 @@ function createRunStore({
       'finalArtifactId',
       'error',
       'finishedAt',
+      'publication',
     ]);
     if (
       !updates ||
