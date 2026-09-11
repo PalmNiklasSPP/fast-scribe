@@ -16,6 +16,7 @@ function statusIcon(status: TranscriptionFile['status']) {
     case 'done': return <CheckCircle2 size={15} className="text-emerald-400 shrink-0" />
     case 'error': return <XCircle size={15} className="text-red-400 shrink-0" />
     case 'transcribing':
+    case 'processing':
     case 'converting': return <Loader2 size={15} className="text-violet-400 animate-spin shrink-0" />
     case 'queued': return <Clock size={15} className="text-zinc-500 shrink-0" />
     default: return <FileAudio size={15} className="text-zinc-600 shrink-0" />
@@ -28,6 +29,7 @@ function statusLabel(status: TranscriptionFile['status']) {
     queued: 'Queued',
     converting: 'Converting…',
     transcribing: 'Transcribing…',
+    processing: 'Processing…',
     done: 'Done',
     error: 'Error',
     cancelled: 'Cancelled',
@@ -47,7 +49,7 @@ export function FileList({ files, onRemove, onOpenOutput, onReview }: FileListPr
   return (
     <div className="flex flex-col gap-1.5">
       {files.map((file) => {
-        const isActive = file.status === 'converting' || file.status === 'transcribing'
+        const isActive = file.status === 'converting' || file.status === 'transcribing' || file.status === 'processing'
         const elapsed =
           file.startedAt && !file.finishedAt
             ? Date.now() - file.startedAt

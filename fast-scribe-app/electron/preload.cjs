@@ -19,6 +19,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setTranscriptDirty: (dirty) => ipcRenderer.invoke('transcript:setDirty', dirty),
   copyText: (text) => ipcRenderer.invoke('clipboard:writeText', text),
 
+  // Plugins and pipeline
+  listPlugins: () => ipcRenderer.invoke('plugins:list'),
+  getPipeline: () => ipcRenderer.invoke('pipeline:get'),
+  validatePipeline: (pipeline) => ipcRenderer.invoke('pipeline:validate', pipeline),
+  savePipeline: (pipeline) => ipcRenderer.invoke('pipeline:save', pipeline),
+
+  // Pipeline runs and artifacts
+  listRuns: () => ipcRenderer.invoke('runs:list'),
+  getRun: (runId) => ipcRenderer.invoke('runs:get', runId),
+  readRunArtifact: (runId, artifactId) => (
+    ipcRenderer.invoke('runs:readArtifact', { runId, artifactId })
+  ),
+  exportRunArtifact: (runId, artifactId) => (
+    ipcRenderer.invoke('runs:exportArtifact', { runId, artifactId })
+  ),
+
   // Updates
   getUpdateState: () => ipcRenderer.invoke('update:getState'),
   checkForUpdates: () => ipcRenderer.invoke('update:check'),

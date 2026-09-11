@@ -187,6 +187,49 @@ test('runTranscription publishes a complete transcript and removes working files
   }
 });
 
+test('runTranscription publishes processed text while exposing the raw transcript to the processor', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fastscribe-test-'));
+  const tempRoot = path.join(root, 'jobs');
+  const inputPath = path.join(root, 'recording.m4a');
+  let capturedRawTranscript;
+
+  await fs.mkdir(tempRoot);
+  await fs.writeFile(inputPath, 'input');
+
+  try {
+    const outputPath = await runTranscription(
+      {
+        inputPath,
+        outputDir: root,
+        config,
+        signal: new AbortController().signal,
+        onEvent: () => {},
+        processTranscript: async (rawTranscript) => {
+          capturedRawTranscript = rawTranscript;
+          return `Processed:\n${rawTranscript}`;
+        },
+      },
+      {
+        tempRoot,
+        ffmpegPath: 'ffmpeg',
+        randomUUIDImpl: () => 'job-id',
+        segmentAudioImpl: async ({ chunkPattern }) => {
+          await fs.writeFile(
+            path.join(path.dirname(chunkPattern), 'chunk_00000.wav'),
+            'audio',
+          );
+        },
+        transcribeChunkImpl: async () => 'raw words',
+      },
+    );
+
+    assert.match(capturedRawTranscript, /raw words/);
+    assert.match(await fs.readFile(outputPath, 'utf8'), /^Processed:/);
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
 test('runTranscription preserves an existing transcript and cleans up after failure', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fastscribe-test-'));
   const tempRoot = path.join(root, 'jobs');

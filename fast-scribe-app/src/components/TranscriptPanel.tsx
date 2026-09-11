@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react'
-import { AlertCircle, Clipboard, Loader2, Save, X } from 'lucide-react'
+import { AlertCircle, Clipboard, Download, Loader2, Save, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import type { TranscriptionFile } from '@/lib/types'
 
 interface TranscriptPanelProps {
   fileName: TranscriptionFile['name']
   outputPath: string
+  runId?: string
+  rawArtifactId?: string
   onClose: () => void
   onDirtyChange: (dirty: boolean) => void
 }
@@ -13,6 +15,8 @@ interface TranscriptPanelProps {
 export function TranscriptPanel({
   fileName,
   outputPath,
+  runId,
+  rawArtifactId,
   onClose,
   onDirtyChange,
 }: TranscriptPanelProps) {
@@ -24,12 +28,18 @@ export function TranscriptPanel({
   const [actionError, setActionError] = useState('')
   const [message, setMessage] = useState('')
   const [loadAttempt, setLoadAttempt] = useState(0)
+  const [view, setView] = useState<'final' | 'raw'>('final')
   const isDirty = content !== savedContent
+  const canViewRaw = Boolean(runId && rawArtifactId)
 
   useEffect(() => {
     let active = true
 
-    window.electronAPI.readTranscript(outputPath)
+    const loadTranscript = view === 'raw' && runId && rawArtifactId
+      ? window.electronAPI.readRunArtifact<string>(runId, rawArtifactId).then((artifact) => artifact.value)
+      : window.electronAPI.readTranscript(outputPath)
+
+    loadTranscript
       .then((transcript) => {
         if (!active) return
         setContent(transcript)
@@ -46,7 +56,7 @@ export function TranscriptPanel({
     return () => {
       active = false
     }
-  }, [outputPath, loadAttempt])
+  }, [outputPath, runId, rawArtifactId, view, loadAttempt])
 
   useEffect(() => {
     onDirtyChange(isDirty)
@@ -55,6 +65,7 @@ export function TranscriptPanel({
   useEffect(() => () => onDirtyChange(false), [onDirtyChange])
 
   const handleSave = async () => {
+    if (view === 'raw') return
     if (!isDirty) return
     setIsSaving(true)
     setActionError('')
@@ -67,6 +78,18 @@ export function TranscriptPanel({
       setActionError(saveError instanceof Error ? saveError.message : 'Unable to save the transcript.')
     } finally {
       setIsSaving(false)
+    }
+  }
+
+  const handleExportRaw = async () => {
+    if (!runId || !rawArtifactId) return
+    setActionError('')
+    setMessage('')
+    try {
+      const result = await window.electronAPI.exportRunArtifact(runId, rawArtifactId)
+      if (!result.cancelled) setMessage('Raw transcript exported.')
+    } catch (exportError) {
+      setActionError(exportError instanceof Error ? exportError.message : 'Unable to export raw transcript.')
     }
   }
 
@@ -96,6 +119,27 @@ export function TranscriptPanel({
           <h2 className="truncate text-sm font-semibold text-zinc-100">{fileName}</h2>
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          {canViewRaw && (
+            <div className="flex rounded-md border border-zinc-800 p-0.5">
+              {(['final', 'raw'] as const).map((option) => (
+                <Button
+                  key={option}
+                  variant={view === option ? 'outline' : 'ghost'}
+                  size="sm"
+                  className="h-6 px-2 capitalize"
+                  onClick={() => {
+                    if (!isDirty || window.confirm('Discard unsaved transcript changes?')) {
+                      setView(option)
+                      setIsLoading(true)
+                      setLoadError('')
+                    }
+                  }}
+                >
+                  {option}
+                </Button>
+              ))}
+            </div>
+          )}
           {isDirty && <span className="text-xs text-amber-400">Unsaved</span>}
           <Button variant="ghost" size="icon" title="Close transcript" onClick={onClose}>
             <X size={16} />
@@ -122,6 +166,7 @@ export function TranscriptPanel({
             <textarea
               aria-label={`Transcript for ${fileName}`}
               spellCheck
+              readOnly={view === 'raw'}
               value={content}
               onChange={(event) => {
                 setContent(event.target.value)
@@ -148,10 +193,16 @@ export function TranscriptPanel({
           <Button variant="outline" onClick={handleCopy}>
             <Clipboard size={14} /> Copy
           </Button>
-          <Button onClick={handleSave} disabled={!isDirty || isSaving}>
-            {isSaving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-            Save
-          </Button>
+          {view === 'raw' ? (
+            <Button onClick={handleExportRaw}>
+              <Download size={14} /> Export raw
+            </Button>
+          ) : (
+            <Button onClick={handleSave} disabled={!isDirty || isSaving}>
+              {isSaving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+              Save
+            </Button>
+          )}
         </div>
       )}
     </aside>

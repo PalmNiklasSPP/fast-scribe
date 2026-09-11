@@ -207,6 +207,7 @@ async function runTranscription(
     signal,
     onEvent,
     onProcess = () => {},
+    processTranscript = async (transcript) => transcript,
   },
   {
     fsImpl = fs,
@@ -282,7 +283,12 @@ async function runTranscription(
     }
 
     throwIfCancelled(signal);
-    const transcript = `--- Transcription Start ---\n\n${transcriptParts.join('\n\n')}\n\n--- Transcription End ---\n`;
+    const rawTranscript = `--- Transcription Start ---\n\n${transcriptParts.join('\n\n')}\n\n--- Transcription End ---\n`;
+    const transcript = await processTranscript(rawTranscript, { signal });
+    if (typeof transcript !== 'string') {
+      throw new Error('Transcript processing must produce text.');
+    }
+    throwIfCancelled(signal);
     await fsImpl.writeFile(temporaryOutputPath, transcript, 'utf8');
     throwIfCancelled(signal);
     await fsImpl.rename(temporaryOutputPath, outputPath);

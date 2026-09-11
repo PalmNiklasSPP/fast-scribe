@@ -28,3 +28,34 @@ fails before packaging if the tag and `package.json` version do not match.
 
 macOS automatic updates require a code-signed and notarized build. Windows signing is also
 recommended to avoid SmartScreen warnings.
+
+## Built-in plugin pipelines
+
+Fast Scribe has a main-process pipeline runtime for trusted plugins bundled with the app. The
+active pipeline is an empty identity pipeline by default, so transcription output is unchanged
+until a pipeline is configured. Pipeline definitions are persisted locally and exposed through
+the preload API for a future drag-and-drop editor:
+
+- `listPlugins()` returns safe plugin manifests, typed ports, and configuration schemas.
+- `getPipeline()`, `validatePipeline()`, and `savePipeline()` manage the versioned graph.
+- `listRuns()`, `getRun()`, and `readRunArtifact()` expose durable run history by opaque IDs.
+
+Every run stores its raw transcript and typed plugin artifacts under Electron's application data
+directory. Only the final text artifact is atomically published to the configured output folder.
+The transcript panel can switch between final and raw text, and raw text can be exported manually.
+
+### Adding a bundled plugin
+
+Register artifact types in `electron/plugins/registry.cjs` and plugin definitions through
+`electron/plugins/builtin-plugins.cjs`. A plugin manifest needs a stable namespaced ID, semantic
+version, typed input/output ports, and an object configuration schema. Its asynchronous `execute`
+function receives validated input values, configuration, and an `AbortSignal`, and must return
+exactly the declared JSON-serializable outputs. Invalid output or an exception fails the run
+without replacing an existing output file.
+
+`fast-scribe.placeholder-anonymizer` is intentionally only an inspectable example. It adds a
+marker, replaces digit groups, and emits a replacement-map artifact; it is not a privacy or
+compliance feature.
+
+Third-party installation, code isolation and signing, permissions, plugin secrets, parallel graph
+execution, secondary-artifact export, pipeline import/export, and the visual editor are deferred.

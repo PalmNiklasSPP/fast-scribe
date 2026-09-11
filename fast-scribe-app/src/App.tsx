@@ -59,7 +59,7 @@ export default function App() {
   }
 
   const isRunning = files.some(
-    (f) => f.status === "transcribing" || f.status === "converting" || f.status === "queued"
+    (f) => f.status === "transcribing" || f.status === "converting" || f.status === "processing" || f.status === "queued"
   )
   const idleCount = files.filter((f) => f.status === "idle").length
   const doneCount = files.filter((f) => f.status === "done").length
@@ -287,7 +287,7 @@ export default function App() {
             <div className="flex items-center justify-between px-5 py-3">
               <span className="text-xs text-zinc-600">
                 {isRunning
-                  ? `Transcribing ${files.filter((f) => f.status === "transcribing" || f.status === "converting").length} file(s)...`
+                  ? `Processing ${files.filter((f) => f.status === "transcribing" || f.status === "converting" || f.status === "processing").length} file(s)...`
                   : idleCount > 0
                   ? `${idleCount} file${idleCount !== 1 ? "s" : ""} ready`
                   : "All complete"}
@@ -324,6 +324,8 @@ export default function App() {
               key={selectedTranscript.id}
               fileName={selectedTranscript.name}
               outputPath={selectedTranscript.outputPath}
+              runId={selectedTranscript.runId}
+              rawArtifactId={selectedTranscript.rawArtifactId}
               onClose={closeTranscript}
               onDirtyChange={setTranscriptDirty}
             />
