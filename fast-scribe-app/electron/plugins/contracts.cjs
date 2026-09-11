@@ -1,6 +1,7 @@
 const { randomUUID } = require('crypto');
 
-const PIPELINE_SCHEMA_VERSION = 1;
+const PIPELINE_SCHEMA_VERSION = 2;
+const PIPELINE_COLLECTION_SCHEMA_VERSION = 1;
 const ARTIFACT_SCHEMA_VERSION = 1;
 const PIPELINE_INPUT_NODE_ID = '$input';
 const TEXT_ARTIFACT_TYPE = 'fast-scribe/text';
@@ -156,6 +157,8 @@ function createEmptyPipeline() {
     nodes: [],
     connections: [],
     output: { nodeId: PIPELINE_INPUT_NODE_ID, portId: 'text' },
+    layout: {},
+    destinations: [],
   };
 }
 
@@ -167,6 +170,7 @@ module.exports = {
   ANONYMIZATION_MAP_ARTIFACT_TYPE,
   ARTIFACT_SCHEMA_VERSION,
   PIPELINE_INPUT_NODE_ID,
+  PIPELINE_COLLECTION_SCHEMA_VERSION,
   PIPELINE_SCHEMA_VERSION,
   PipelineCancelledError,
   PipelineExecutionError,

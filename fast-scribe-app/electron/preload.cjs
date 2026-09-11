@@ -21,9 +21,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Plugins and pipeline
   listPlugins: () => ipcRenderer.invoke('plugins:list'),
-  getPipeline: () => ipcRenderer.invoke('pipeline:get'),
+  listPipelines: () => ipcRenderer.invoke('pipeline:list'),
+  getPipeline: (pipelineId) => ipcRenderer.invoke('pipeline:get', pipelineId),
   validatePipeline: (pipeline) => ipcRenderer.invoke('pipeline:validate', pipeline),
-  savePipeline: (pipeline) => ipcRenderer.invoke('pipeline:save', pipeline),
+  createPipeline: (request) => ipcRenderer.invoke('pipeline:create', request),
+  savePipeline: (request) => ipcRenderer.invoke('pipeline:save', request),
+  selectPipeline: (request) => ipcRenderer.invoke('pipeline:select', request),
+  setPipelineDirty: (dirty) => ipcRenderer.invoke('pipeline:setDirty', dirty),
+  onSelectedPipelineChange: (callback) => {
+    const handler = (_event, state) => callback(state);
+    ipcRenderer.on('pipeline:selectedChanged', handler);
+    return () => ipcRenderer.removeListener('pipeline:selectedChanged', handler);
+  },
 
   // Pipeline runs and artifacts
   listRuns: () => ipcRenderer.invoke('runs:list'),

@@ -32,17 +32,27 @@ recommended to avoid SmartScreen warnings.
 ## Built-in plugin pipelines
 
 Fast Scribe has a main-process pipeline runtime for trusted plugins bundled with the app. The
-active pipeline is an empty identity pipeline by default, so transcription output is unchanged
-until a pipeline is configured. Pipeline definitions are persisted locally and exposed through
-the preload API for a future drag-and-drop editor:
+selected pipeline is an empty identity pipeline by default, so transcription output is unchanged
+until a pipeline is configured. Named pipelines, their graph layouts, saved revisions, and the
+current selection are persisted locally:
 
 - `listPlugins()` returns safe plugin manifests, typed ports, and configuration schemas.
-- `getPipeline()`, `validatePipeline()`, and `savePipeline()` manage the versioned graph.
+- `listPipelines()`, `getPipeline()`, `createPipeline()`, `savePipeline()`, and
+  `selectPipeline()` manage revision-protected saved pipelines.
 - `listRuns()`, `getRun()`, and `readRunArtifact()` expose durable run history by opaque IDs.
 
 Every run stores its raw transcript and typed plugin artifacts under Electron's application data
-directory. Only the final text artifact is atomically published to the configured output folder.
-The transcript panel can switch between final and raw text, and raw text can be exported manually.
+directory. It captures the selected saved revision and output settings before processing begins,
+so editor changes cannot alter an active run. The primary text artifact and any configured
+secondary destinations are staged before publishing. If a secondary destination fails, the run
+fails and Fast Scribe rolls back files it already published.
+
+Secondary destinations support text/TXT and replacement-map/JSON outputs. A destination uses its
+custom folder when configured, otherwise the Settings output folder, otherwise the source-file
+folder. Filenames are literal except for `{sourceName}`; a suitable extension is added when
+omitted, and existing filenames receive a numeric suffix rather than being overwritten.
+Replacement maps contain original values, so Fast Scribe displays a warning before saving one.
+They are not encrypted and this release does not apply automatic retention cleanup.
 
 ### Adding a bundled plugin
 
@@ -57,21 +67,11 @@ without replacing an existing output file.
 marker, replaces digit groups, and emits a replacement-map artifact; it is not a privacy or
 compliance feature.
 
+Open **Pipeline** in the desktop title bar to choose or create a saved pipeline, add installed
+plugins, configure typed connections, and manage additional output destinations. The Raw
+transcript and Final output cards are visual execution concepts only; neither is serialized as a
+plugin. Unsaved pipeline drafts are protected independently from unsaved transcript edits when
+closing or installing an update.
+
 Third-party installation, code isolation and signing, permissions, plugin secrets, parallel graph
-execution, secondary-artifact export, pipeline import/export, and the visual editor are deferred.
-
-## Pipeline preview
-
-Open **Pipeline** in the desktop title bar to explore the canvas-first pipeline preview. It is a
-safe visual prototype: choose a session-only example, add and connect modules, and inspect
-typed text or replacement-map destinations. Its module library contains the built-in placeholder
-anonymizer alongside clearly marked demo modules, and it does not read, validate, save, or
-execute the active pipeline.
-
-You can add, move, configure, connect, remove, undo, and redo modules. **Save preview** keeps a
-valid graph only for the current app session, while **Revert** returns to that session snapshot.
-Selected wires expose a Disconnect action, and file destinations display either the current
-Settings output folder or a preview-only override without writing anything. Both saved previews
-and demo graphs reset after closing Fast Scribe; transcription output and the persisted runtime
-pipeline are never changed. See [the pipeline UI handoff](docs/pipeline-ui-handoff.md) for the
-remaining functional wiring work.
+execution, and pipeline import/export remain deferred.

@@ -1,28 +1,26 @@
 import { Search, Sparkles, X } from 'lucide-react'
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
-import type { PreviewModule, PreviewPosition } from '@/lib/pipeline-fixtures'
-import { previewModules } from '@/lib/pipeline-fixtures'
+import type { PipelinePosition, PluginManifest } from '@/lib/types'
 
 interface PluginPaletteProps {
-  onAdd: (moduleDefinition: PreviewModule, position: PreviewPosition) => void
+  plugins: PluginManifest[]
+  onAdd: (plugin: PluginManifest, position: PipelinePosition) => void
   onClose: () => void
 }
 
-export function PluginPalette({ onAdd, onClose }: PluginPaletteProps) {
+export function PluginPalette({ plugins, onAdd, onClose }: PluginPaletteProps) {
   const [query, setQuery] = useState('')
-  const filtered = previewModules.filter((moduleDefinition) =>
-    `${moduleDefinition.name} ${moduleDefinition.description}`.toLowerCase().includes(query.toLowerCase()),
+  const filtered = plugins.filter((plugin) =>
+    `${plugin.name} ${plugin.description}`.toLowerCase().includes(query.toLowerCase()),
   )
-
-  const addModule = (moduleDefinition: PreviewModule) => onAdd(moduleDefinition, { x: 380, y: 360 })
 
   return (
     <aside className="pipeline-panel pipeline-palette" aria-label="Module library">
       <div className="pipeline-panel__header">
         <div>
           <h2>Module library</h2>
-          <p>Compose a preview flow.</p>
+          <p>Installed processing plugins.</p>
         </div>
         <Button variant="ghost" size="icon" title="Close module library" aria-label="Close module library" onClick={onClose}>
           <X size={16} />
@@ -33,26 +31,26 @@ export function PluginPalette({ onAdd, onClose }: PluginPaletteProps) {
         <input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search modules" />
       </label>
       <div className="pipeline-palette__list">
-        {filtered.map((moduleDefinition) => (
+        {filtered.map((plugin) => (
           <article
-            key={moduleDefinition.id}
+            key={`${plugin.id}@${plugin.version}`}
             className="pipeline-module-card"
             draggable
             onDragStart={(event) => {
-              event.dataTransfer.setData('application/fast-scribe-module', moduleDefinition.id)
+              event.dataTransfer.setData('application/fast-scribe-plugin', `${plugin.id}@${plugin.version}`)
               event.dataTransfer.effectAllowed = 'move'
             }}
           >
             <div className="pipeline-module-card__title">
               <span className="pipeline-node__glyph"><Sparkles size={14} /></span>
-              <strong>{moduleDefinition.name}</strong>
-              <span className="pipeline-badge">{moduleDefinition.kind === 'demo' ? 'Demo' : 'Example'}</span>
+              <strong>{plugin.name}</strong>
             </div>
-            <p>{moduleDefinition.description}</p>
-            <Button size="sm" variant="outline" onClick={() => addModule(moduleDefinition)}>Add</Button>
+            <p>{plugin.description}</p>
+            <span className="pipeline-badge">v{plugin.version}</span>
+            <Button size="sm" variant="outline" onClick={() => onAdd(plugin, { x: 380, y: 360 })}>Add</Button>
           </article>
         ))}
-        {!filtered.length && <p className="pipeline-empty">No modules match “{query}”.</p>}
+        {!filtered.length && <p className="pipeline-empty">No installed plugins match “{query}”.</p>}
       </div>
     </aside>
   )

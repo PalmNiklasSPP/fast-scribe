@@ -1,122 +1,184 @@
 import { useCallback, useRef, useState } from 'react'
-import type { PreviewDraft, PreviewEndpoint, PreviewModule, PreviewPosition } from '@/lib/pipeline-fixtures'
 import {
-  addModule,
-  clearToPassThrough,
-  cloneDraft,
+  addDestination,
+  addPlugin,
+  clearPipeline,
+  clonePipeline,
   connectEndpoints,
-  draftsMatch,
+  pipelinesMatch,
   removeConnection,
+  removeDestination,
   removeNode,
   setNodeConfig,
   setNodePosition,
-  validatePreviewDraft,
+  updateDestination,
+  validatePipelineDraft,
 } from '@/lib/pipeline-editor'
-import { createPreviewDraft, previewScenarios } from '@/lib/pipeline-fixtures'
+import type {
+  PipelineDestination,
+  PipelineEndpoint,
+  PipelinePosition,
+  PipelineRecord,
+  PipelineState,
+  PluginManifest,
+} from '@/lib/types'
 
 const HISTORY_LIMIT = 40
 
-export function usePipelineEditor(onDirtyChange: (dirty: boolean) => void) {
-  const [draft, setDraft] = useState<PreviewDraft>(createPreviewDraft)
-  const [saved, setSaved] = useState<PreviewDraft>(createPreviewDraft)
+interface DraftSnapshot {
+  name: string
+  pipeline: PipelineRecord['pipeline']
+}
+
+function cloneSnapshot(snapshot: DraftSnapshot): DraftSnapshot {
+  return { name: snapshot.name, pipeline: clonePipeline(snapshot.pipeline) }
+}
+
+export function usePipelineEditor(
+  initialState: PipelineState,
+  plugins: PluginManifest[],
+  onDirtyChange: (dirty: boolean) => void,
+  onSaved: (state: PipelineState) => void,
+) {
+  const initialSnapshot = {
+    name: initialState.pipeline.name,
+    pipeline: clonePipeline(initialState.pipeline.pipeline),
+  }
+  const [draft, setDraft] = useState<DraftSnapshot>(initialSnapshot)
+  const [saved, setSaved] = useState<DraftSnapshot>(initialSnapshot)
+  const [revision, setRevision] = useState(initialState.pipeline.revision)
   const [selectedNodeId, setSelectedNodeId] = useState<string>()
   const [message, setMessage] = useState('')
-  const [scenarioId, setScenarioId] = useState<string>(previewScenarios[0].id)
   const [historyState, setHistoryState] = useState({ canUndo: false, canRedo: false })
-  const undoStack = useRef<PreviewDraft[]>([])
-  const redoStack = useRef<PreviewDraft[]>([])
-  const issues = validatePreviewDraft(draft)
-  const isDirty = !draftsMatch(draft, saved)
+  const undoStack = useRef<DraftSnapshot[]>([])
+  const redoStack = useRef<DraftSnapshot[]>([])
+  const issues = validatePipelineDraft(draft.pipeline, plugins)
+  const isDirty = draft.name !== saved.name || !pipelinesMatch(draft.pipeline, saved.pipeline)
 
   const syncHistoryState = useCallback(() => {
     setHistoryState({ canUndo: undoStack.current.length > 0, canRedo: redoStack.current.length > 0 })
   }, [])
 
-  const updateDraft = useCallback((next: PreviewDraft, saveHistory = true) => {
-    if (draftsMatch(draft, next)) return
+  const updateDraft = useCallback((next: DraftSnapshot, saveHistory = true) => {
+    const changed = next.name !== draft.name || !pipelinesMatch(next.pipeline, draft.pipeline)
+    if (!changed) return
     if (saveHistory) {
-      undoStack.current = [...undoStack.current.slice(-(HISTORY_LIMIT - 1)), cloneDraft(draft)]
+      undoStack.current = [...undoStack.current.slice(-(HISTORY_LIMIT - 1)), cloneSnapshot(draft)]
       redoStack.current = []
       syncHistoryState()
     }
     setDraft(next)
-    onDirtyChange(!draftsMatch(next, saved))
+    onDirtyChange(next.name !== saved.name || !pipelinesMatch(next.pipeline, saved.pipeline))
     setMessage('')
   }, [draft, onDirtyChange, saved, syncHistoryState])
 
-  const add = useCallback((moduleDefinition: PreviewModule, position: PreviewPosition) => {
-    const result = addModule(draft, moduleDefinition, position)
-    updateDraft(result.draft)
-    setSelectedNodeId(result.nodeId)
+  const updatePipeline = useCallback((nextPipeline: PipelineRecord['pipeline'], saveHistory = true) => {
+    updateDraft({ ...draft, pipeline: nextPipeline }, saveHistory)
   }, [draft, updateDraft])
 
-  const move = useCallback((nodeId: string, position: PreviewPosition) => {
-    updateDraft(setNodePosition(draft, nodeId, position))
-  }, [draft, updateDraft])
+  const add = useCallback((plugin: PluginManifest, position: PipelinePosition) => {
+    const result = addPlugin(draft.pipeline, plugin, position)
+    updatePipeline(result.pipeline)
+    setSelectedNodeId(result.nodeId)
+  }, [draft.pipeline, updatePipeline])
+
+  const move = useCallback((nodeId: string, position: PipelinePosition) => {
+    updatePipeline(setNodePosition(draft.pipeline, nodeId, position))
+  }, [draft.pipeline, updatePipeline])
 
   const updateConfig = useCallback((nodeId: string, key: string, value: unknown) => {
-    updateDraft(setNodeConfig(draft, nodeId, key, value))
-  }, [draft, updateDraft])
+    updatePipeline(setNodeConfig(draft.pipeline, nodeId, key, value))
+  }, [draft.pipeline, updatePipeline])
 
-  const connect = useCallback((from: PreviewEndpoint, to: PreviewEndpoint) => {
-    const result = connectEndpoints(draft, from, to)
+  const connect = useCallback((from: PipelineEndpoint, to: PipelineEndpoint) => {
+    const result = connectEndpoints(draft.pipeline, plugins, from, to)
     if (result.error) {
       setMessage(result.error)
       return false
     }
-    if (result.draft) updateDraft(result.draft)
+    if (result.pipeline) updatePipeline(result.pipeline)
     return true
-  }, [draft, updateDraft])
+  }, [draft.pipeline, plugins, updatePipeline])
 
   const remove = useCallback((nodeId: string) => {
-    updateDraft(removeNode(draft, nodeId))
+    updatePipeline(removeNode(draft.pipeline, nodeId))
     setSelectedNodeId((selected) => selected === nodeId ? undefined : selected)
-  }, [draft, updateDraft])
+  }, [draft.pipeline, updatePipeline])
 
   const removeMany = useCallback((nodeIds: string[]) => {
-    let next = draft
-    for (const nodeId of nodeIds) next = removeNode(next, nodeId)
-    updateDraft(next)
+    const next = nodeIds.reduce((pipeline, nodeId) => removeNode(pipeline, nodeId), draft.pipeline)
+    updatePipeline(next)
     setSelectedNodeId((selected) => selected && nodeIds.includes(selected) ? undefined : selected)
-  }, [draft, updateDraft])
+  }, [draft.pipeline, updatePipeline])
 
-  const disconnect = useCallback((from: PreviewEndpoint, to: PreviewEndpoint) => {
-    updateDraft(removeConnection(draft, { from, to }))
-  }, [draft, updateDraft])
+  const disconnect = useCallback((from: PipelineEndpoint, to: PipelineEndpoint) => {
+    updatePipeline(removeConnection(draft.pipeline, { from, to }))
+  }, [draft.pipeline, updatePipeline])
 
-  const disconnectMany = useCallback((connections: Array<{ from: PreviewEndpoint; to: PreviewEndpoint }>) => {
-    let next = draft
-    for (const connection of connections) next = removeConnection(next, connection)
-    updateDraft(next)
-  }, [draft, updateDraft])
+  const disconnectMany = useCallback((connections: Array<{ from: PipelineEndpoint; to: PipelineEndpoint }>) => {
+    const next = connections.reduce((pipeline, connection) => removeConnection(pipeline, connection), draft.pipeline)
+    updatePipeline(next)
+  }, [draft.pipeline, updatePipeline])
+
+  const addOutputDestination = useCallback((artifactType: string, from?: PipelineEndpoint) => {
+    updatePipeline(addDestination(draft.pipeline, artifactType, from))
+  }, [draft.pipeline, updatePipeline])
+
+  const editDestination = useCallback((destinationId: string, updates: Partial<PipelineDestination>) => {
+    updatePipeline(updateDestination(draft.pipeline, destinationId, updates))
+  }, [draft.pipeline, updatePipeline])
+
+  const deleteDestination = useCallback((destinationId: string) => {
+    updatePipeline(removeDestination(draft.pipeline, destinationId))
+  }, [draft.pipeline, updatePipeline])
 
   const clear = useCallback(() => {
-    updateDraft(clearToPassThrough())
+    updatePipeline(clearPipeline(draft.pipeline))
     setSelectedNodeId(undefined)
-  }, [updateDraft])
+  }, [draft.pipeline, updatePipeline])
 
-  const save = useCallback(() => {
+  const save = useCallback(async () => {
     if (issues.length || !isDirty) return false
-    const snapshot = cloneDraft(draft)
-    setSaved(snapshot)
-    onDirtyChange(false)
-    setMessage('Preview saved for this session. Transcription is unchanged.')
-    return true
-  }, [draft, isDirty, issues.length, onDirtyChange])
+    if (
+      draft.pipeline.destinations.some((destination) => destination.artifactType === 'fast-scribe/anonymization-map') &&
+      !window.confirm('Replacement maps contain original values. Save this sensitive output destination?')
+    ) {
+      return false
+    }
+    try {
+      const state = await window.electronAPI.savePipeline({
+        id: initialState.pipeline.id,
+        name: draft.name,
+        pipeline: draft.pipeline,
+        expectedRevision: revision,
+      })
+      const snapshot = { name: state.pipeline.name, pipeline: clonePipeline(state.pipeline.pipeline) }
+      setDraft(snapshot)
+      setSaved(cloneSnapshot(snapshot))
+      setRevision(state.pipeline.revision)
+      onDirtyChange(false)
+      onSaved(state)
+      setMessage('Pipeline saved and selected for future transcriptions.')
+      return true
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Unable to save this pipeline.')
+      return false
+    }
+  }, [draft, initialState.pipeline.id, isDirty, issues.length, onDirtyChange, onSaved, revision])
 
   const revert = useCallback(() => {
-    updateDraft(cloneDraft(saved), false)
+    updateDraft(cloneSnapshot(saved), false)
     onDirtyChange(false)
     setSelectedNodeId(undefined)
-    setMessage('Preview restored to the saved session version.')
+    setMessage('Pipeline restored to its saved version.')
   }, [onDirtyChange, saved, updateDraft])
 
   const undo = useCallback(() => {
     const previous = undoStack.current.at(-1)
     if (!previous) return
     undoStack.current = undoStack.current.slice(0, -1)
-    redoStack.current = [...redoStack.current, cloneDraft(draft)]
-    updateDraft(cloneDraft(previous), false)
+    redoStack.current = [...redoStack.current, cloneSnapshot(draft)]
+    updateDraft(cloneSnapshot(previous), false)
     syncHistoryState()
   }, [draft, syncHistoryState, updateDraft])
 
@@ -124,25 +186,10 @@ export function usePipelineEditor(onDirtyChange: (dirty: boolean) => void) {
     const next = redoStack.current.at(-1)
     if (!next) return
     redoStack.current = redoStack.current.slice(0, -1)
-    undoStack.current = [...undoStack.current, cloneDraft(draft)]
-    updateDraft(cloneDraft(next), false)
+    undoStack.current = [...undoStack.current, cloneSnapshot(draft)]
+    updateDraft(cloneSnapshot(next), false)
     syncHistoryState()
   }, [draft, syncHistoryState, updateDraft])
-
-  const selectScenario = useCallback((nextScenarioId: string) => {
-    const scenario = previewScenarios.find((candidate) => candidate.id === nextScenarioId)
-    if (!scenario) return
-    const nextDraft = scenario.createDraft()
-    setScenarioId(scenario.id)
-    setDraft(nextDraft)
-    setSaved(cloneDraft(nextDraft))
-    undoStack.current = []
-    redoStack.current = []
-    syncHistoryState()
-    onDirtyChange(false)
-    setSelectedNodeId(undefined)
-    setMessage(`Opened ${scenario.name} preview.`)
-  }, [onDirtyChange, syncHistoryState])
 
   return {
     draft,
@@ -150,7 +197,6 @@ export function usePipelineEditor(onDirtyChange: (dirty: boolean) => void) {
     issues,
     message,
     selectedNodeId,
-    scenarioId,
     canUndo: historyState.canUndo,
     canRedo: historyState.canRedo,
     add,
@@ -161,12 +207,15 @@ export function usePipelineEditor(onDirtyChange: (dirty: boolean) => void) {
     removeMany,
     disconnect,
     disconnectMany,
+    addOutputDestination,
+    editDestination,
+    deleteDestination,
     clear,
     save,
     revert,
     undo,
     redo,
-    selectScenario,
+    setName: (name: string) => updateDraft({ ...draft, name }),
     setSelectedNodeId,
     setMessage,
   }

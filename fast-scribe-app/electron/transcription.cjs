@@ -208,6 +208,20 @@ async function runTranscription(
     onEvent,
     onProcess = () => {},
     processTranscript = async (transcript) => transcript,
+    publishTranscript = async ({ outputPath, transcript, signal: publicationSignal }) => {
+      const temporaryOutputPath = path.join(
+        path.dirname(outputPath),
+        `.${path.parse(outputPath).name}.${randomUUIDImpl()}.tmp`,
+      );
+      try {
+        await fsImpl.writeFile(temporaryOutputPath, transcript, 'utf8');
+        throwIfCancelled(publicationSignal);
+        await fsImpl.rename(temporaryOutputPath, outputPath);
+      } finally {
+        await fsImpl.rm(temporaryOutputPath, { force: true });
+      }
+      return outputPath;
+    },
   },
   {
     fsImpl = fs,
@@ -225,10 +239,6 @@ async function runTranscription(
   const resolvedOutputDir = outputDir || path.dirname(path.resolve(inputPath));
   const baseName = path.parse(inputPath).name;
   const outputPath = path.join(resolvedOutputDir, `${baseName}.txt`);
-  const temporaryOutputPath = path.join(
-    resolvedOutputDir,
-    `.${baseName}.${randomUUIDImpl()}.tmp`,
-  );
 
   await fsImpl.access(inputPath);
   await fsImpl.mkdir(resolvedOutputDir, { recursive: true });
@@ -238,7 +248,6 @@ async function runTranscription(
   let result = null;
 
   try {
-    onEvent({ type: 'output_path', outputPath });
     throwIfCancelled(signal);
     onEvent({ type: 'progress', progress: 5 });
 
@@ -289,12 +298,14 @@ async function runTranscription(
       throw new Error('Transcript processing must produce text.');
     }
     throwIfCancelled(signal);
-    await fsImpl.writeFile(temporaryOutputPath, transcript, 'utf8');
+    result = await publishTranscript({ outputPath, transcript, signal });
+    if (typeof result !== 'string' || !path.isAbsolute(result)) {
+      throw new Error('Transcript publication must return an absolute output path.');
+    }
     throwIfCancelled(signal);
-    await fsImpl.rename(temporaryOutputPath, outputPath);
+    onEvent({ type: 'output_path', outputPath: result });
 
     onEvent({ type: 'progress', progress: 100 });
-    result = outputPath;
   } catch (error) {
     if (signal.aborted && !(error instanceof TranscriptionCancelledError)) {
       operationError = new TranscriptionCancelledError();
@@ -305,7 +316,6 @@ async function runTranscription(
 
   onProcess(null);
   const cleanupResults = await Promise.allSettled([
-    fsImpl.rm(temporaryOutputPath, { force: true }),
     fsImpl.rm(jobDirectory, { recursive: true, force: true }),
   ]);
   const cleanupErrors = cleanupResults

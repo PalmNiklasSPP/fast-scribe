@@ -4,10 +4,11 @@ const fs = require('fs/promises');
 const path = require('path');
 const Store = require('electron-store').default;
 const { createConfigService } = require('./config.cjs');
-const { createTranscriptFileService, writeTranscript } = require('./transcript-files.cjs');
+const { createTranscriptFileService } = require('./transcript-files.cjs');
 const { createPluginSystem } = require('./plugins/index.cjs');
 const { createPipelineService } = require('./plugins/pipeline-service.cjs');
 const { runPipeline } = require('./plugins/pipeline.cjs');
+const { PublicationError, publishArtifacts, serializerFor } = require('./destination-publication.cjs');
 const { createRunStore } = require('./run-store.cjs');
 const {
   createTranscriptionJob,
@@ -29,7 +30,6 @@ const store = new Store({
 const configService = createConfigService({ store, safeStorage: require('electron').safeStorage });
 const transcriptFiles = createTranscriptFileService();
 const pluginSystem = createPluginSystem();
-const pipelineService = createPipelineService({ store, plugins: pluginSystem.plugins });
 
 const isDev = process.env.NODE_ENV === 'development';
 
@@ -39,9 +39,19 @@ const startingJobs = new Set();
 let allowQuit = false;
 let shutdownPromise = null;
 let hasUnsavedTranscript = false;
+let hasUnsavedPipeline = false;
 let allowWindowClose = false;
 let isConfirmingTranscriptClose = false;
 let runStore;
+const pipelineService = createPipelineService({
+  store,
+  plugins: pluginSystem.plugins,
+  onSelectedPipelineChange: (pipelineState) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('pipeline:selectedChanged', pipelineState);
+    }
+  },
+});
 const updateController = createUpdateController({
   autoUpdater,
   currentVersion: app.getVersion(),
@@ -87,7 +97,7 @@ function createWindow() {
 
   const closingWindow = mainWindow;
   closingWindow.on('close', (event) => {
-    if (!hasUnsavedTranscript || allowWindowClose) return;
+    if ((!hasUnsavedTranscript && !hasUnsavedPipeline) || allowWindowClose) return;
 
     event.preventDefault();
     if (isConfirmingTranscriptClose) return;
@@ -98,12 +108,21 @@ function createWindow() {
       buttons: ['Keep editing', 'Discard changes'],
       defaultId: 0,
       cancelId: 0,
-      title: 'Unsaved transcript',
-      message: 'Discard unsaved transcript changes?',
-      detail: 'Your edits have not been written to the transcript file.',
+      title: hasUnsavedTranscript && hasUnsavedPipeline ? 'Unsaved changes' : (
+        hasUnsavedPipeline ? 'Unsaved pipeline' : 'Unsaved transcript'
+      ),
+      message: hasUnsavedTranscript && hasUnsavedPipeline
+        ? 'Discard unsaved transcript and pipeline changes?'
+        : hasUnsavedPipeline
+          ? 'Discard unsaved pipeline changes?'
+          : 'Discard unsaved transcript changes?',
+      detail: hasUnsavedPipeline
+        ? 'Your pipeline edits have not been saved and will not affect future transcriptions.'
+        : 'Your edits have not been written to the transcript file.',
     }).then(({ response }) => {
       if (response === 1) {
         hasUnsavedTranscript = false;
+        hasUnsavedPipeline = false;
         allowWindowClose = true;
         closingWindow.close();
       } else {
@@ -241,9 +260,16 @@ ipcMain.handle('transcript:setDirty', (_event, dirty) => {
 // --- IPC: Plugins and pipeline ---
 
 ipcMain.handle('plugins:list', () => pluginSystem.plugins.listManifests());
-ipcMain.handle('pipeline:get', () => pipelineService.getPipeline());
+ipcMain.handle('pipeline:list', () => pipelineService.listPipelines());
+ipcMain.handle('pipeline:get', (_event, pipelineId) => pipelineService.getPipeline(pipelineId));
 ipcMain.handle('pipeline:validate', (_event, pipeline) => pipelineService.validatePipeline(pipeline));
-ipcMain.handle('pipeline:save', (_event, pipeline) => pipelineService.savePipeline(pipeline));
+ipcMain.handle('pipeline:create', (_event, request) => pipelineService.createPipeline(request));
+ipcMain.handle('pipeline:save', (_event, request) => pipelineService.savePipeline(request));
+ipcMain.handle('pipeline:select', (_event, request) => pipelineService.selectPipeline(request));
+ipcMain.handle('pipeline:setDirty', (_event, dirty) => {
+  if (typeof dirty !== 'boolean') throw new Error('Pipeline dirty state must be a boolean.');
+  hasUnsavedPipeline = dirty;
+});
 
 // --- IPC: Pipeline runs ---
 
@@ -257,16 +283,14 @@ ipcMain.handle('runs:exportArtifact', async (_event, { runId, artifactId }) => {
     runStore.get(runId),
     runStore.readArtifact(runId, artifactId),
   ]);
-  if (artifact.type !== 'fast-scribe/text') {
-    throw new Error('Only text artifacts can be exported.');
-  }
+  const serializer = serializerFor(artifact.type);
   const sourceName = path.parse(run.source.name).name;
   const result = await dialog.showSaveDialog(mainWindow, {
-    defaultPath: `${sourceName}.raw.txt`,
-    filters: [{ name: 'Plain text', extensions: ['txt'] }],
+    defaultPath: `${sourceName}.${artifact.type === 'fast-scribe/text' ? 'raw' : 'artifact'}${serializer.extension}`,
+    filters: [{ name: serializer.label, extensions: [serializer.extension.slice(1)] }],
   });
   if (result.canceled || !result.filePath) return { cancelled: true };
-  await writeTranscript(result.filePath, artifact.value);
+  await fs.writeFile(result.filePath, serializer.serialize(artifact.value), 'utf8');
   return { cancelled: false, filePath: result.filePath };
 });
 
@@ -282,7 +306,12 @@ ipcMain.handle('clipboard:writeText', (_event, text) => {
 ipcMain.handle('update:getState', () => updateController.getState());
 ipcMain.handle('update:check', () => updateController.check());
 ipcMain.handle('update:download', () => updateController.download());
-ipcMain.handle('update:install', () => updateController.install());
+ipcMain.handle('update:install', () => {
+  if (hasUnsavedPipeline) {
+    throw new Error('Save or discard pipeline changes before restarting to update.');
+  }
+  return updateController.install();
+});
 
 // --- IPC: Transcription ---
 
@@ -298,8 +327,9 @@ ipcMain.handle('transcription:start', async (_event, { jobId, filePath }) => {
   try {
     const config = configService.getPrivateConfig();
     const outputDir = config.outputDir || path.dirname(filePath);
-    const pipeline = pipelineService.getPipeline();
-    const run = await runStore.create({ sourcePath: filePath, pipeline });
+    const pipelineRecord = pipelineService.getSelectedPipeline();
+    const pipeline = pipelineRecord.pipeline;
+    const run = await runStore.create({ sourcePath: filePath, pipeline: pipelineRecord });
     const sendEvent = (event) => {
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send(`transcription:event:${jobId}`, event);
@@ -328,6 +358,27 @@ ipcMain.handle('transcription:start', async (_event, { jobId, filePath }) => {
           finalArtifactId: pipelineResult.finalArtifact.id,
         });
         return pipelineResult.finalArtifact.value;
+      },
+      publishTranscript: async ({ outputPath, signal }) => {
+        if (!pipelineResult) throw new Error('Pipeline result is unavailable for publication.');
+        try {
+          const publication = await publishArtifacts({
+            sourcePath: filePath,
+            primaryOutputPath: outputPath,
+            finalArtifact: pipelineResult.finalArtifact,
+            artifacts: pipelineResult.artifacts,
+            destinations: pipeline.destinations,
+            settingsOutputDir: config.outputDir,
+            signal,
+          });
+          await runStore.update(run.id, { publication: publication.results });
+          return publication.outputPath;
+        } catch (error) {
+          if (error instanceof PublicationError) {
+            await runStore.update(run.id, { publication: error.results });
+          }
+          throw error;
+        }
       },
     });
 
