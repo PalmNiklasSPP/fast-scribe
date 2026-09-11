@@ -27,7 +27,9 @@ Implemented:
 
 Deferred:
 
-- Visual pipeline editor.
+- Functional pipeline editor wiring: the app now has a visual-only canvas preview. See
+  `fast-scribe-app/docs/pipeline-ui-handoff.md` for the remaining persistence, pipeline
+  selection, validation, and output-publication work.
 - Third-party plugin installation or code loading.
 - Plugin sandboxing, permissions, signing, and updates.
 - Secret management for future LLM plugins.

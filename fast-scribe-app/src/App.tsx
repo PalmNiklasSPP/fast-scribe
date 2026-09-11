@@ -1,5 +1,5 @@
-import { useEffect, useState, useMemo } from "react"
-import { Play, X, Trash2, AlertCircle, Settings, Download, RefreshCw } from "lucide-react"
+import { useCallback, useEffect, useState } from "react"
+import { Play, X, Trash2, AlertCircle, Settings, Download, RefreshCw, Workflow } from "lucide-react"
 import appIcon from "@/assets/app-icon.svg"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
@@ -7,6 +7,8 @@ import { DropZone } from "@/components/DropZone"
 import { FileList } from "@/components/FileList"
 import { SettingsPanel } from "@/components/SettingsPanel"
 import { TranscriptPanel } from "@/components/TranscriptPanel"
+import { WorkspacePipelineSummary } from "@/components/WorkspacePipelineSummary"
+import { PipelineEditor } from "@/components/pipeline/PipelineEditor"
 import { ToastProvider, ToastViewport, Toast, ToastTitle, ToastDescription, ToastClose } from "@/components/ui/toast"
 import { useTranscription } from "@/hooks/useTranscription"
 import { useToast } from "@/hooks/useToast"
@@ -26,6 +28,9 @@ export default function App() {
   const [config, setConfig] = useState<AppConfig>(DEFAULT_CONFIG)
   const [configLoaded, setConfigLoaded] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [activeView, setActiveView] = useState<'workspace' | 'pipeline'>('workspace')
+  const [pipelinePreviewDirty, setPipelinePreviewDirty] = useState(false)
+  const [pipelinePreviewName, setPipelinePreviewName] = useState('Clean and summarize')
   const [selectedTranscriptId, setSelectedTranscriptId] = useState<string | null>(null)
   const [transcriptDirty, setTranscriptDirty] = useState(false)
   const [updateState, setUpdateState] = useState<UpdateState | null>(null)
@@ -64,10 +69,11 @@ export default function App() {
   const idleCount = files.filter((f) => f.status === "idle").length
   const doneCount = files.filter((f) => f.status === "done").length
   const errorCount = files.filter((f) => f.status === "error").length
+  const activeJobCount = files.filter(
+    (f) => f.status === "transcribing" || f.status === "converting" || f.status === "processing" || f.status === "queued"
+  ).length
   const selectedTranscript = files.find((file) => file.id === selectedTranscriptId) ?? null
   const configMissing = !config.endpoint || !config.hasApiKey
-  const pipelineSteps = useMemo(() => [] as string[], [])
-
   const closeTranscript = () => {
     if (transcriptDirty && !window.confirm("Discard unsaved transcript changes?")) {
       return false
@@ -78,8 +84,30 @@ export default function App() {
   }
 
   const openSettings = () => {
-    if (closeTranscript()) setSettingsOpen(true)
+    if (!closeTranscript()) return
+    if (activeView === 'pipeline' && pipelinePreviewDirty && !window.confirm('Leave this unsaved pipeline preview? You can continue editing when you return this session.')) {
+      return
+    }
+    setActiveView('workspace')
+    setSettingsOpen(true)
   }
+
+  const openPipeline = () => {
+    if (!closeTranscript()) return
+    setSettingsOpen(false)
+    setActiveView('pipeline')
+  }
+
+  const openWorkspace = () => {
+    if (activeView === 'pipeline' && pipelinePreviewDirty && !window.confirm('Leave this unsaved pipeline preview? You can continue editing when you return this session.')) {
+      return
+    }
+    setActiveView('workspace')
+  }
+
+  const handlePipelinePreviewDirty = useCallback((dirty: boolean) => {
+    setPipelinePreviewDirty(dirty)
+  }, [])
 
   const handleReviewTranscript = (id: string) => {
     if (id === selectedTranscriptId || !closeTranscript()) return
@@ -168,7 +196,25 @@ export default function App() {
               <img src={appIcon} alt="" aria-hidden="true" className="h-4 w-4" />
               <span className="text-sm font-semibold tracking-tight">Fast Scribe</span>
               <Button
-                variant={settingsOpen ? "outline" : "ghost"}
+                variant={activeView === 'workspace' ? "outline" : "ghost"}
+                size="sm"
+                title="Transcription workspace"
+                onClick={openWorkspace}
+              >
+                <Play size={14} />
+                Workspace
+              </Button>
+              <Button
+                variant={activeView === 'pipeline' ? "outline" : "ghost"}
+                size="sm"
+                title="Pipeline preview"
+                onClick={openPipeline}
+              >
+                <Workflow size={14} />
+                Pipeline
+              </Button>
+              <Button
+                variant={settingsOpen && activeView === 'workspace' ? "outline" : "ghost"}
                 size="sm"
                 title="Settings"
                 onClick={() => {
@@ -187,7 +233,7 @@ export default function App() {
 
           <Separator />
 
-        <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-5">
+        <div className={activeView === 'workspace' ? "flex flex-1 flex-col gap-4 overflow-y-auto p-5" : "hidden"}>
           {updateVisible && (
             <div className="flex items-center justify-between gap-3 rounded-lg border border-violet-800/70 bg-violet-950/30 px-4 py-3 text-xs text-violet-200">
               <div className="flex items-center gap-2">
@@ -249,9 +295,15 @@ export default function App() {
         </div>
           )}
 
+          <WorkspacePipelineSummary
+            previewName={pipelinePreviewName}
+            outputDir={config.outputDir}
+            onEdit={openPipeline}
+          />
+
           <DropZone onFilesAdded={addFiles} />
 
-          {files.length > 0 && (
+          {activeView === 'workspace' && files.length > 0 && (
             <>
               <div className="flex items-center justify-between">
                 <span className="text-xs text-zinc-500">
@@ -274,11 +326,6 @@ export default function App() {
             </>
           )}
 
-          {pipelineSteps.length > 0 && (
-            <div className="rounded-lg border border-zinc-800 p-4">
-              <p className="text-xs font-semibold uppercase tracking-wider text-zinc-600">Pipeline</p>
-            </div>
-          )}
         </div>
 
         {files.length > 0 && (
@@ -287,7 +334,7 @@ export default function App() {
             <div className="flex items-center justify-between px-5 py-3">
               <span className="text-xs text-zinc-600">
                 {isRunning
-                  ? `Processing ${files.filter((f) => f.status === "transcribing" || f.status === "converting" || f.status === "processing").length} file(s)...`
+                  ? `Processing ${activeJobCount} file(s)...`
                   : idleCount > 0
                   ? `${idleCount} file${idleCount !== 1 ? "s" : ""} ready`
                   : "All complete"}
@@ -307,9 +354,17 @@ export default function App() {
             </div>
           </>
         )}
+          <PipelineEditor
+            active={activeView === 'pipeline'}
+            onDirtyChange={handlePipelinePreviewDirty}
+            activeJobCount={activeJobCount}
+            onCancelActiveJobs={cancelAll}
+            outputDir={config.outputDir}
+            onScenarioChange={setPipelinePreviewName}
+          />
           </div>
 
-          {settingsOpen && (
+          {settingsOpen && activeView === 'workspace' && (
             <SettingsPanel
               config={config}
               onSave={handleSaveConfig}

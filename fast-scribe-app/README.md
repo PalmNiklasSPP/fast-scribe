@@ -59,3 +59,19 @@ compliance feature.
 
 Third-party installation, code isolation and signing, permissions, plugin secrets, parallel graph
 execution, secondary-artifact export, pipeline import/export, and the visual editor are deferred.
+
+## Pipeline preview
+
+Open **Pipeline** in the desktop title bar to explore the canvas-first pipeline preview. It is a
+safe visual prototype: choose a session-only example, add and connect modules, and inspect
+typed text or replacement-map destinations. Its module library contains the built-in placeholder
+anonymizer alongside clearly marked demo modules, and it does not read, validate, save, or
+execute the active pipeline.
+
+You can add, move, configure, connect, remove, undo, and redo modules. **Save preview** keeps a
+valid graph only for the current app session, while **Revert** returns to that session snapshot.
+Selected wires expose a Disconnect action, and file destinations display either the current
+Settings output folder or a preview-only override without writing anything. Both saved previews
+and demo graphs reset after closing Fast Scribe; transcription output and the persisted runtime
+pipeline are never changed. See [the pipeline UI handoff](docs/pipeline-ui-handoff.md) for the
+remaining functional wiring work.
