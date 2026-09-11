@@ -3,6 +3,7 @@ const {
   PIPELINE_SCHEMA_VERSION,
   TEXT_ARTIFACT_TYPE,
   createArtifact,
+  isJsonValue,
   isPlainObject,
   throwIfPipelineCancelled,
   validateConfigValue,
@@ -10,6 +11,12 @@ const {
 } = require('./contracts.cjs');
 
 const NODE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
+const DESTINATION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
+const FILENAME_TEMPLATE_PATTERN = /^(?:[^{}]|\{sourceName\})+$/;
+const DESTINATION_SERIALIZERS = {
+  'fast-scribe/text': 'txt',
+  'fast-scribe/anonymization-map': 'json',
+};
 
 function sourceKey(source) {
   return `${source.nodeId}:${source.portId}`;
@@ -24,6 +31,8 @@ function validatePipeline(pipeline, plugins) {
   if (!Array.isArray(pipeline.nodes)) errors.push('Pipeline nodes must be an array.');
   if (!Array.isArray(pipeline.connections)) errors.push('Pipeline connections must be an array.');
   if (!isPlainObject(pipeline.output)) errors.push('Pipeline output binding is required.');
+  if (!isPlainObject(pipeline.layout)) errors.push('Pipeline layout must be an object.');
+  if (!Array.isArray(pipeline.destinations)) errors.push('Pipeline destinations must be an array.');
   if (errors.length > 0) return { valid: false, errors };
 
   const nodes = new Map();
@@ -34,11 +43,13 @@ function validatePipeline(pipeline, plugins) {
       !NODE_ID_PATTERN.test(node.id) ||
       typeof node.pluginId !== 'string' ||
       typeof node.pluginVersion !== 'string' ||
-      !isPlainObject(node.config)
+      !isPlainObject(node.config) ||
+      !isJsonValue(node.config)
     ) {
       errors.push('Pipeline contains an invalid node.');
       continue;
     }
+
     if (nodes.has(node.id)) {
       errors.push(`Pipeline node ID "${node.id}" is duplicated.`);
       continue;
@@ -50,6 +61,17 @@ function validatePipeline(pipeline, plugins) {
       errors.push(...validateConfigValue(plugin.manifest.configSchema, node.config, `Node "${node.id}" config`));
     }
     nodes.set(node.id, { node, plugin });
+  }
+
+  for (const [nodeId, position] of Object.entries(pipeline.layout)) {
+    if (
+      !nodes.has(nodeId) ||
+      !isPlainObject(position) ||
+      !Number.isFinite(position.x) ||
+      !Number.isFinite(position.y)
+    ) {
+      errors.push(`Pipeline layout position for "${nodeId}" is invalid.`);
+    }
   }
 
   const incoming = new Map();
@@ -99,6 +121,53 @@ function validatePipeline(pipeline, plugins) {
     errors.push(`Pipeline output "${sourceKey(pipeline.output)}" does not exist.`);
   } else if (outputType !== TEXT_ARTIFACT_TYPE) {
     errors.push('Pipeline final output must be a text artifact.');
+  }
+
+  const destinationIds = new Set();
+  const destinationSources = new Set();
+  for (const destination of pipeline.destinations) {
+    if (
+      !isPlainObject(destination) ||
+      typeof destination.id !== 'string' ||
+      !DESTINATION_ID_PATTERN.test(destination.id) ||
+      !isPlainObject(destination.from) ||
+      typeof destination.artifactType !== 'string' ||
+      typeof destination.serializer !== 'string' ||
+      !['settings', 'custom'].includes(destination.folderMode) ||
+      typeof destination.filenameTemplate !== 'string'
+    ) {
+      errors.push('Pipeline contains an invalid destination.');
+      continue;
+    }
+    if (destinationIds.has(destination.id)) {
+      errors.push(`Pipeline destination ID "${destination.id}" is duplicated.`);
+    }
+    destinationIds.add(destination.id);
+    const source = sourceKey(destination.from);
+    const sourceType = sourceTypes.get(source);
+    if (!sourceType) {
+      errors.push(`Destination "${destination.id}" source "${source}" does not exist.`);
+    } else if (sourceType !== destination.artifactType) {
+      errors.push(`Destination "${destination.id}" does not match its source artifact type.`);
+    }
+    if (DESTINATION_SERIALIZERS[destination.artifactType] !== destination.serializer) {
+      errors.push(`Destination "${destination.id}" has an unsupported serializer.`);
+    }
+    if (destination.folderMode === 'custom' && typeof destination.customFolder !== 'string') {
+      errors.push(`Destination "${destination.id}" custom folder is required.`);
+    }
+    if (
+      !destination.filenameTemplate.trim() ||
+      !FILENAME_TEMPLATE_PATTERN.test(destination.filenameTemplate) ||
+      /[\\/]/.test(destination.filenameTemplate) ||
+      destination.filenameTemplate.includes('..')
+    ) {
+      errors.push(`Destination "${destination.id}" filename template is invalid.`);
+    }
+    if (destinationSources.has(source)) {
+      errors.push(`Destination source "${source}" is bound more than once.`);
+    }
+    destinationSources.add(source);
   }
 
   const indegree = new Map([...nodes.keys()].map((id) => [id, 0]));
@@ -243,6 +312,7 @@ async function runPipeline({
 }
 
 module.exports = {
+  DESTINATION_SERIALIZERS,
   assertValidPipeline,
   runPipeline,
   validatePipeline,

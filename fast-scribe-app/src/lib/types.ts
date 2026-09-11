@@ -68,21 +68,86 @@ export interface PipelineEndpoint {
   portId: string;
 }
 
+export interface PipelinePosition {
+  x: number;
+  y: number;
+}
+
+export interface PipelineNode {
+  id: string;
+  pluginId: string;
+  pluginVersion: string;
+  config: Record<string, unknown>;
+}
+
+export interface PipelineDestination {
+  id: string;
+  from: PipelineEndpoint;
+  artifactType: string;
+  serializer: 'txt' | 'json';
+  folderMode: 'settings' | 'custom';
+  customFolder?: string;
+  filenameTemplate: string;
+}
+
 export interface PipelineDefinition {
   schemaVersion: number;
-  nodes: Array<{
-    id: string;
-    pluginId: string;
-    pluginVersion: string;
-    config: Record<string, unknown>;
-  }>;
+  nodes: PipelineNode[];
   connections: Array<{ from: PipelineEndpoint; to: PipelineEndpoint }>;
   output: PipelineEndpoint;
+  layout: Record<string, PipelinePosition>;
+  destinations: PipelineDestination[];
 }
 
 export interface PipelineValidation {
   valid: boolean;
   errors: string[];
+}
+
+export interface PipelineRecord {
+  id: string;
+  name: string;
+  revision: number;
+  createdAt: string;
+  updatedAt: string;
+  pipeline: PipelineDefinition;
+}
+
+export interface PipelineState {
+  pipeline: PipelineRecord;
+  validation: PipelineValidation;
+  recoverable: boolean;
+}
+
+export interface PipelineSummary {
+  id: string;
+  name: string;
+  revision: number;
+  createdAt: string;
+  updatedAt: string;
+  valid: boolean;
+  errors: string[];
+}
+
+export interface PipelineList {
+  selected: { pipelineId: string; revision: number };
+  pipelines: PipelineSummary[];
+}
+
+export interface SavePipelineRequest {
+  id: string;
+  name: string;
+  pipeline: PipelineDefinition;
+  expectedRevision: number;
+}
+
+export interface PublicationResult {
+  id: string;
+  kind: 'primary' | 'destination';
+  artifactId: string;
+  artifactType: string;
+  path: string;
+  status: 'pending' | 'staged' | 'published' | 'rolled_back' | 'rollback_failed';
 }
 
 export interface RunArtifact<T = unknown> {
@@ -99,8 +164,9 @@ export interface PipelineRun {
   id: string;
   status: 'transcribing' | 'processing' | 'publishing' | 'completed' | 'failed' | 'cancelled';
   source: { path: string; name: string };
-  pipeline: PipelineDefinition;
+  pipeline: PipelineRecord;
   artifacts: Array<Omit<RunArtifact, 'value'>>;
+  publication?: PublicationResult[];
   createdAt: string;
   updatedAt: string;
   finishedAt?: string;
@@ -143,9 +209,14 @@ declare global {
       setTranscriptDirty: (dirty: boolean) => Promise<void>;
       copyText: (text: string) => Promise<void>;
       listPlugins: () => Promise<PluginManifest[]>;
-      getPipeline: () => Promise<PipelineDefinition>;
+      listPipelines: () => Promise<PipelineList>;
+      getPipeline: (pipelineId?: string) => Promise<PipelineState>;
       validatePipeline: (pipeline: PipelineDefinition) => Promise<PipelineValidation>;
-      savePipeline: (pipeline: PipelineDefinition) => Promise<PipelineDefinition>;
+      createPipeline: (request: { name: string; pipeline?: PipelineDefinition }) => Promise<PipelineState>;
+      savePipeline: (request: SavePipelineRequest) => Promise<PipelineState>;
+      selectPipeline: (request: { id: string; expectedRevision?: number }) => Promise<PipelineState>;
+      setPipelineDirty: (dirty: boolean) => Promise<void>;
+      onSelectedPipelineChange: (callback: (state: PipelineState) => void) => () => void;
       listRuns: () => Promise<PipelineRun[]>;
       getRun: (runId: string) => Promise<PipelineRun>;
       readRunArtifact: <T = unknown>(runId: string, artifactId: string) => Promise<RunArtifact<T>>;
