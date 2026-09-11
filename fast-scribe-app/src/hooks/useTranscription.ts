@@ -72,8 +72,22 @@ export function useTranscription() {
               case 'output_path':
                 updateFile(file.id, { outputPath: event.outputPath })
                 break
+              case 'run_created':
+                updateFile(file.id, { runId: event.runId })
+                break
+              case 'plugin_started':
+              case 'plugin_completed':
+                updateFile(file.id, { status: 'processing', progress: 96 })
+                break
               case 'done':
-                updateFile(file.id, { status: 'done', progress: 100, finishedAt: Date.now() })
+                updateFile(file.id, {
+                  status: 'done',
+                  progress: 100,
+                  finishedAt: Date.now(),
+                  runId: event.runId,
+                  rawArtifactId: event.rawArtifactId,
+                  finalArtifactId: event.finalArtifactId,
+                })
                 unsubscribe()
                 resolve()
                 break
@@ -157,7 +171,7 @@ export function useTranscription() {
   const cancelAll = useCallback(async () => {
     cancelRequested.current = true
     const active = files.filter(
-      (f) => f.status === 'transcribing' || f.status === 'converting' || f.status === 'queued'
+      (f) => f.status === 'transcribing' || f.status === 'converting' || f.status === 'processing' || f.status === 'queued'
     )
     for (const f of active) {
       if (f.status === 'queued') {
