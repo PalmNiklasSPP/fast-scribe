@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
   // Config
@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Dialogs
   openFiles: () => ipcRenderer.invoke('dialog:openFiles'),
   openFolder: () => ipcRenderer.invoke('dialog:openFolder'),
+  getPathForFile: (file) => webUtils.getPathForFile(file),
   openInExplorer: (filePath) => ipcRenderer.invoke('shell:openPath', filePath),
 
   // Transcript files
