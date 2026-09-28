@@ -216,6 +216,7 @@ declare global {
       importConfig: (filePath: string, passphrase: string) => Promise<AppConfig>;
       openFiles: () => Promise<string[]>;
       openFolder: () => Promise<string | null>;
+      getPathForFile: (file: File) => string;
       openInExplorer: (filePath: string) => Promise<void>;
       readTranscript: (filePath: string) => Promise<string>;
       saveTranscript: (filePath: string, content: string) => Promise<void>;

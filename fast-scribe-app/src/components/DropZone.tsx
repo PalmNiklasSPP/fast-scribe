@@ -32,9 +32,8 @@ export function DropZone({ onFilesAdded }: DropZoneProps) {
       for (const item of Array.from(e.dataTransfer.files)) {
         const ext = item.name.split('.').pop()?.toLowerCase() ?? ''
         if (SUPPORTED.has(ext)) {
-          // In Electron, File objects from drag-drop have a `path` property
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          paths.push((item as any).path ?? item.name)
+          const path = window.electronAPI.getPathForFile(item)
+          if (path) paths.push(path)
         }
       }
       if (paths.length) onFilesAdded(paths.map(fileToTranscriptionFile))
